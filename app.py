@@ -82,9 +82,7 @@ def login():
     return jsonify({"success": True, "msg": "Login successful"})
 
 
-# -----------------------------
-# HOME
-# -----------------------------
+
 @app.get("/")
 def home():
     return "Backend with Firebase is running!"
