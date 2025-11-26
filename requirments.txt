@@ -1,0 +1,5 @@
+Fkask
+gunicorn
+firebase-admin
+Flask-Cors
+Werkzeug
