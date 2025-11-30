@@ -3,59 +3,66 @@ from flask_cors import CORS
 import firebase_admin
 from firebase_admin import credentials, firestore
 from werkzeug.security import generate_password_hash, check_password_hash
-import os, json
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
 
 app = Flask(__name__)
 CORS(app)
 
 # -----------------------------
-# Firebase Connection
+# Firebase Initialization
 # -----------------------------
-firebase_key = os.environ.get("FIREBASE_KEY")
+SERVICE_ACCOUNT_PATH = r"C:\Users\Dona\Downloads\edu-sync-adcb0-firebase-adminsdk-fbsvc-81ea8023ac.json"  
+GOOGLE_CLIENT_ID = "562682529890-tq8hjqqtml1kp2oop25i6j7gheiu89h1.apps.googleusercontent.com"  
 
-if firebase_key:
-    firebase_key_dict = json.loads(firebase_key)
-    cred = credentials.Certificate(firebase_key_dict)
+cred = credentials.Certificate(SERVICE_ACCOUNT_PATH)
+try:
+    firebase_admin.get_app()
+except ValueError:
     firebase_admin.initialize_app(cred)
-else:
-    raise Exception("Firebase key missing!")
 
 db = firestore.client()
 users_ref = db.collection("users")
-
-
-# -----------------------------
-# SIGNUP
-# -----------------------------
+# sign up
 @app.post("/signup")
 def signup():
-    data = request.json  
-    username = data.get("username", "").strip()
-    email = data.get("email", "").strip()
-    password = data.get("password", "").strip()
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"success": False, "msg": "Invalid JSON"}), 400
 
-    if not username or not email or not password:
-        return jsonify({"success": False, "msg": "All fields are required"}), 400
+        username = data.get("username", "").strip()
+        email = data.get("email", "").strip()
+        password = data.get("password", "").strip()
 
-    if users_ref.where("email", "==", email).get():
-        return jsonify({"success": False, "msg": "Email already exists"}), 400
+        if not username or not email or not password:
+            return jsonify({"success": False, "msg": "All fields are required"}), 400
 
-    if users_ref.where("username", "==", username).get():
-        return jsonify({"success": False, "msg": "Username already exists"}), 400
+        # Check if email exists
+        if list(users_ref.where("email", "==", email).stream()):
+            return jsonify({"success": False, "msg": "Email already exists"}), 400
 
-    hashed_password = generate_password_hash(password)
+        # Check if username exists
+        if list(users_ref.where("username", "==", username).stream()):
+            return jsonify({"success": False, "msg": "Username already exists"}), 400
 
-    users_ref.add({
-        "username": username,
-        "email": email,
-        "password": hashed_password
-    })
+        hashed_password = generate_password_hash(password)
 
-    return jsonify({"success": True, "msg": "User registered successfully"})
+        users_ref.add({
+            "username": username,
+            "email": email,
+            "password": hashed_password
+        })
+
+        return jsonify({"success": True, "msg": "User registered successfully"})
+
+    except Exception as e:
+        print("Signup error:", e)
+        return jsonify({"success": False, "msg": "Server error"}), 500
 
 
 # -----------------------------
-# LOGIN
+# TRADITIONAL LOGIN
 # -----------------------------
 @app.post("/login")
 def login():
@@ -81,12 +88,44 @@ def login():
 
     return jsonify({"success": True, "msg": "Login successful"})
 
+# -----------------------------
+# GOOGLE SIGN-IN
+# -----------------------------
+@app.route("/google-signin", methods=["POST"])
+def google_signin():
+    token = request.json.get("token")
+    if not token:
+        return jsonify({"success": False, "msg": "Token is required"}), 400
 
+    try:
+        # تحقق من الـ token
+        idinfo = id_token.verify_oauth2_token(token, google_requests.Request(), GOOGLE_CLIENT_ID)
+        userid = idinfo['sub']
+        email = idinfo['email']
+        name = idinfo.get('name', '')
 
+        # تحقق لو اليوزر موجود في Firestore
+        user_doc = users_ref.document(userid).get()
+        if not user_doc.exists:
+            users_ref.document(userid).set({
+                "name": name,
+                "email": email
+            })
+
+        return jsonify({"success": True})
+
+    except ValueError:
+        return jsonify({"success": False, "msg": "Invalid token"}), 400
+
+# -----------------------------
+# HOME ROUTE
+# -----------------------------
 @app.get("/")
 def home():
     return "Backend with Firebase is running!"
 
-
+# -----------------------------
+# RUN APP
+# -----------------------------
 if __name__ == "__main__":
-    app.run()
+    app.run(debug=True)
