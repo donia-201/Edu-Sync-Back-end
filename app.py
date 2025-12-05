@@ -1,4 +1,6 @@
 from flask import Flask, request, jsonify
+import os 
+import json
 from flask_cors import CORS
 import firebase_admin
 from firebase_admin import credentials, firestore
@@ -12,10 +14,10 @@ CORS(app)
 # -----------------------------
 # Firebase Initialization
 # -----------------------------
-SERVICE_ACCOUNT_PATH = r"C:\Users\Dona\Downloads\edu-sync-adcb0-firebase-adminsdk-fbsvc-81ea8023ac.json"  
-GOOGLE_CLIENT_ID = "562682529890-tq8hjqqtml1kp2oop25i6j7gheiu89h1.apps.googleusercontent.com"  
+SERVICE_ACCOUNT_JSON = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")  
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID" ) 
 
-cred = credentials.Certificate(SERVICE_ACCOUNT_PATH)
+cred = credentials.Certificate(json.loads(SERVICE_ACCOUNT_JSON))
 try:
     firebase_admin.get_app()
 except ValueError:
@@ -128,4 +130,4 @@ def home():
 # RUN APP
 # -----------------------------
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=8000)
