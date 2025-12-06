@@ -8,6 +8,8 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 import requests
+print("ENV:", os.environ)
+
 
 app = Flask(__name__)
 
@@ -134,5 +136,7 @@ def home():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=8000)
-    # 
+    port = os.getenv("PORT")
+    port = int(os.getenv("PORT", 8000))
+    app.run(host="0.0.0.0", port=port)
+    
