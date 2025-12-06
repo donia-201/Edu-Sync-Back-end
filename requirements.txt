@@ -1,5 +1,6 @@
-Fkask
+Flask
 gunicorn
 firebase-admin
 Flask-Cors
 Werkzeug
+requests
