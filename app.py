@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, make_response
+from flask import Flask, request, jsonify, make_response , redirect
 import os
 import json
 from flask_cors import CORS
@@ -125,7 +125,7 @@ def google_callback():
     access_token = token_response.get("access_token")
 
     if id_token:
-        return "Login successful!"
+        return redirect('https://edu-sync-gold.vercel.app/home.html?token='+id_token)
     else:
         return "Failed to get token", 400
 
