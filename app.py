@@ -7,6 +7,7 @@ from firebase_admin import credentials, firestore
 from werkzeug.security import generate_password_hash, check_password_hash
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
+import requests
 
 app = Flask(__name__)
 
@@ -34,44 +35,6 @@ except ValueError:
 db = firestore.client()
 users_ref = db.collection("users")
 
-
-
-@app.route("/google-signin", methods=["POST", "OPTIONS"])
-def google_signin():
-
-    if request.method == "OPTIONS":
-        return make_response("", 200)
-
-    data = request.get_json()
-    token = data.get("token")
-
-    if not token:
-        return jsonify({"success": False, "msg": "Token missing"}), 400
-
-    try:
-        idinfo = id_token.verify_token(
-            token,
-            google_requests.Request(),
-            audience=GOOGLE_CLIENT_ID
-        )
-
-        userid = idinfo["sub"]
-        email = idinfo["email"]
-        name = idinfo.get("name", "Unknown")
-
-        user_ref = users_ref.document(userid)
-
-        if not user_ref.get().exists:
-            user_ref.set({
-                "email": email,
-                "name": name
-            })
-
-        return jsonify({"success": True})
-
-    except Exception as e:
-        print("Google Sign-In Error:", e)
-        return jsonify({"success": False, "msg": "Invalid token"}), 400
 
 
 
@@ -134,6 +97,36 @@ def login():
 
     return jsonify({"success": True, "msg": "Login successful"})
 
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+REDIRECT_URI = "https://b72a9bfe-19ab-4e55-aa04-388ba10e8bc9-00-kxyqxw13s269.worf.replit.dev/google-callback"
+
+@app.route("/google-callback")
+def google_callback():
+    code = request.args.get("code")
+    if not code:
+        return "No code received", 400
+
+    # استبدال الـ code بـ token
+    token_url = "https://oauth2.googleapis.com/token"
+    data = {
+        "code": code,
+        "client_id": GOOGLE_CLIENT_ID,
+        "client_secret": GOOGLE_CLIENT_SECRET,
+        "redirect_uri": REDIRECT_URI,
+        "grant_type": "authorization_code"
+    }
+    r = requests.post(token_url, data=data)
+    token_response = r.json()
+
+    id_token = token_response.get("id_token")
+    access_token = token_response.get("access_token")
+
+    if id_token:
+        # هنا ممكن تتحقق من الـ id_token أو تخزن البيانات في الـ Firestore
+        return "Login successful!"
+    else:
+        return "Failed to get token", 400
 
 @app.get("/")
 def home():
