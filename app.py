@@ -125,7 +125,7 @@ def google_callback():
     access_token = token_response.get("access_token")
 
     if id_token:
-        return redirect('https://edu-sync-gold.vercel.app/home.html?token='+id_token)
+        return redirect(f'https://edu-sync-gold.vercel.app/pages/home.html?token={id_token}')
     else:
         return "Failed to get token", 400
 
