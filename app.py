@@ -10,10 +10,8 @@ from google.auth.transport import requests as google_requests
 
 app = Flask(__name__)
 
-# ---- FIX 1: Enable CORS properly ----
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
-# ---- FIX 2: Add CORS headers to all responses ----
 @app.after_request
 def apply_cors(response):
     response.headers["Access-Control-Allow-Origin"] = "*"
@@ -23,9 +21,7 @@ def apply_cors(response):
     return response
 
 
-# -----------------------------
-# Firebase Initialization
-# -----------------------------
+
 SERVICE_ACCOUNT_JSON = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 
@@ -39,13 +35,10 @@ db = firestore.client()
 users_ref = db.collection("users")
 
 
-# -----------------------------
-# GOOGLE SIGN-IN (FIXED)
-# -----------------------------
+
 @app.route("/google-signin", methods=["POST", "OPTIONS"])
 def google_signin():
 
-    # ---- FIX 3: Handle OPTIONS preflight ----
     if request.method == "OPTIONS":
         return make_response("", 200)
 
@@ -56,7 +49,6 @@ def google_signin():
         return jsonify({"success": False, "msg": "Token missing"}), 400
 
     try:
-        # ---- FIX 4: Correct verification for Google ID Tokens ----
         idinfo = id_token.verify_token(
             token,
             google_requests.Request(),
@@ -67,7 +59,6 @@ def google_signin():
         email = idinfo["email"]
         name = idinfo.get("name", "Unknown")
 
-        # Create or update user
         user_ref = users_ref.document(userid)
 
         if not user_ref.get().exists:
@@ -83,9 +74,6 @@ def google_signin():
         return jsonify({"success": False, "msg": "Invalid token"}), 400
 
 
-# -----------------------------
-# REST OF YOUR ROUTES (unchanged)
-# -----------------------------
 
 @app.post("/signup")
 def signup():
