@@ -99,9 +99,9 @@ def login():
 
     return jsonify({"success": True, "msg": "Login successful"})
 
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID" )
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
-REDIRECT_URI = "https://b72a9bfe-19ab-4e55-aa04-388ba10e8bc9-00-kxyqxw13s269.worf.replit.dev/google-callback"
+REDIRECT_URI = "https://edu-sync-back-end-production.up.railway.app/google-callback"
 
 @app.route("/google-callback")
 def google_callback():
@@ -125,7 +125,6 @@ def google_callback():
     access_token = token_response.get("access_token")
 
     if id_token:
-        # هنا ممكن تتحقق من الـ id_token أو تخزن البيانات في الـ Firestore
         return "Login successful!"
     else:
         return "Failed to get token", 400
@@ -137,6 +136,6 @@ def home():
 
 if __name__ == "__main__":
     port = os.getenv("PORT")
-    port = int(os.getenv("PORT", 8000))
+    port = int(os.getenv("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
     
