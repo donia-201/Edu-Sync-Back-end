@@ -11,6 +11,8 @@ import requests
 import secrets
 from datetime import datetime, timedelta
 
+print("ENV:", os.environ)
+
 app = Flask(__name__)
 
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
@@ -68,6 +70,7 @@ def signup():
         username = data.get("username", "").strip()
         email = data.get("email", "").strip()
         password = data.get("password", "").strip()
+        study_field = data.get("study_field", "").strip()
 
         if not username or not email or not password:
             return jsonify({"success": False, "msg": "All fields are required"}), 400
@@ -85,6 +88,7 @@ def signup():
             "username": username,
             "email": email,
             "password": hashed_password,
+            "study_field": study_field,
             "created_at": datetime.utcnow()
         })
 
@@ -99,7 +103,8 @@ def signup():
             "user": {
                 "id": user_id,
                 "username": username,
-                "email": email
+                "email": email,
+                "study_field": study_field
             }
         })
 
@@ -108,7 +113,7 @@ def signup():
         return jsonify({"success": False, "msg": "Server error"}), 500
 
 
-@app.post("/login" )
+@app.post("/login")
 def login():
     try:
         data = request.json
@@ -146,7 +151,8 @@ def login():
             "user": {
                 "id": user_id,
                 "username": user_data["username"],
-                "email": user_data["email"]
+                "email": user_data["email"],
+                "study_field": user_data.get("study_field", "")
             }
         })
 
@@ -234,9 +240,9 @@ def logout():
         return jsonify({"success": False, "msg": "Logout failed"}), 500
 
 
-@app.get("/verify-session" )
+@app.get("/verify-session")
 def verify_session():
-    """ check validation of session"""
+    """التحقق من صلاحية الـ session"""
     try:
         token = request.headers.get("Authorization", "").replace("Bearer ", "")
         if not token:
