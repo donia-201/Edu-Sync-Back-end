@@ -276,8 +276,8 @@ def verify_session():
         if expires_at and isinstance(expires_at, datetime):
             if datetime.utcnow() > expires_at:
                 # session expired
-                sessions_ref.document(token).delete()
-                return jsonify({"success": False, "msg": "Session expired"}), 401
+                # sessions_ref.document(token).delete()
+                # return jsonify({"success": False, "msg": "Session expired"}), 401
 
         return jsonify({
             "success": True,
