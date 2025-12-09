@@ -1,3 +1,4 @@
+# app.py
 from flask import Flask, request, jsonify, make_response, redirect
 import os
 import json
@@ -11,30 +12,39 @@ import requests
 import secrets
 from datetime import datetime, timedelta
 
-print("ENV:", os.environ)
-
 app = Flask(__name__)
 
-CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
+# Use a specific origin (recommended) — read from env or fallback to your frontend origin
+FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "https://edu-sync-gold.vercel.app")
+
+# CORS: allow only the frontend origin (avoid "*")
+CORS(app, resources={r"/*": {"origins": FRONTEND_ORIGIN}}, supports_credentials=True)
 
 @app.after_request
 def apply_cors(response):
-    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Origin"] = FRONTEND_ORIGIN
     response.headers["Access-Control-Allow-Credentials"] = "true"
     response.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
     return response
 
+# Environment variables
 SERVICE_ACCOUNT_JSON = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
-REDIRECT_URI = "https://edu-sync-back-end-production.up.railway.app/google-callback"
+REDIRECT_URI = os.getenv("REDIRECT_URI", "https://edu-sync-back-end-production.up.railway.app/google-callback")
 
-cred = credentials.Certificate(json.loads(SERVICE_ACCOUNT_JSON))
-try:
-    firebase_admin.get_app()
-except ValueError:
-    firebase_admin.initialize_app(cred)
+# Initialize Firebase Admin if credentials present
+if SERVICE_ACCOUNT_JSON:
+    try:
+        cred = credentials.Certificate(json.loads(SERVICE_ACCOUNT_JSON))
+        if not firebase_admin._apps:
+            firebase_admin.initialize_app(cred)
+    except Exception as e:
+        # If Firebase init fails, print and continue (will error later when used)
+        print("Firebase initialization error:", e)
+else:
+    print("Warning: FIREBASE_SERVICE_ACCOUNT_JSON not provided.")
 
 db = firestore.client()
 users_ref = db.collection("users")
@@ -46,14 +56,15 @@ def generate_session_token():
     return secrets.token_urlsafe(32)
 
 
-def create_session(user_id, username, email):
+def create_session(user_id, username, email, days_valid=7):
     """Create a session in Firestore and return token"""
     token = generate_session_token()
     session_data = {
         "user_id": user_id,
         "username": username,
         "email": email,
-        "created_at": datetime.utcnow()
+        "created_at": datetime.utcnow(),
+        "expires_at": datetime.utcnow() + timedelta(days=days_valid)
     }
     sessions_ref.document(token).set(session_data)
     return token
@@ -67,7 +78,7 @@ def signup():
             return jsonify({"success": False, "msg": "Invalid JSON"}), 400
 
         username = data.get("username", "").strip()
-        email = data.get("email", "").strip()
+        email = data.get("email", "").strip().lower()
         password = data.get("password", "").strip()
         study_field = data.get("study_field", "").strip()
 
@@ -91,8 +102,8 @@ def signup():
             "created_at": datetime.utcnow()
         })
 
-        # إنشاء session
-        user_id = doc_ref[1].id
+        # doc_ref is (document_reference, write_time) -> document_reference is index 0
+        user_id = doc_ref[0].id
         token = create_session(user_id, username, email)
 
         return jsonify({
@@ -115,17 +126,21 @@ def signup():
 @app.post("/login")
 def login():
     try:
-        data = request.json
+        data = request.get_json()
+        if not data:
+            return jsonify({"success": False, "msg": "Invalid JSON"}), 400
+
         user_input = data.get("user", "").strip()
         password = data.get("password", "").strip()
 
         if not user_input or not password:
             return jsonify({"success": False, "msg": "All fields are required"}), 400
 
-        # البحث بالـ email أولاً
-        query = list(users_ref.where("email", "==", user_input).stream())
+        # normalize input for email check
+        # search by email first
+        query = list(users_ref.where("email", "==", user_input.lower()).stream())
 
-        # لو مش موجود، ابحث بالـ username
+        # if not found, search by username (case-sensitive as stored)
         if not query:
             query = list(users_ref.where("username", "==", user_input).stream())
 
@@ -165,9 +180,9 @@ def google_callback():
     try:
         code = request.args.get("code")
         if not code:
-            return redirect("https://edu-sync-gold.vercel.app/?error=no_code")
+            return redirect(f"{FRONTEND_ORIGIN}/?error=no_code")
 
-        # استبدال الـ code بـ token
+        # exchange code for token
         token_url = "https://oauth2.googleapis.com/token"
         data = {
             "code": code,
@@ -177,14 +192,18 @@ def google_callback():
             "grant_type": "authorization_code"
         }
         r = requests.post(token_url, data=data)
-        token_response = r.json()
 
+        if not r.ok:
+            print("Token exchange failed:", r.status_code, r.text)
+            return redirect(f"{FRONTEND_ORIGIN}/?error=no_token")
+
+        token_response = r.json()
         google_id_token = token_response.get("id_token")
 
         if not google_id_token:
-            return redirect("https://edu-sync-gold.vercel.app/?error=no_token")
+            return redirect(f"{FRONTEND_ORIGIN}/?error=no_token")
 
-        # فك تشفير الـ Google token
+        # verify google id token
         idinfo = id_token.verify_oauth2_token(
             google_id_token, 
             google_requests.Request(), 
@@ -195,18 +214,16 @@ def google_callback():
         name = idinfo.get("name")
         google_user_id = idinfo.get("sub")
 
-        # البحث عن المستخدم أو إنشاء حساب جديد
+        # search user or create
         query = list(users_ref.where("email", "==", email).stream())
 
         if query:
-            # المستخدم موجود
             user_doc = query[0]
             user_id = user_doc.id
             user_data = user_doc.to_dict()
             username = user_data.get("username", name)
         else:
-            # إنشاء مستخدم جديد
-            username = email.split("@")[0]  # استخدام اسم من الـ email
+            username = email.split("@")[0]
             doc_ref = users_ref.add({
                 "username": username,
                 "email": email,
@@ -214,16 +231,17 @@ def google_callback():
                 "created_at": datetime.utcnow(),
                 "auth_provider": "google"
             })
-            user_id = doc_ref[1].id
+            user_id = doc_ref[0].id
 
-        # إنشاء session
+        # create session
         session_token = create_session(user_id, username, email)
 
-        return redirect(f'https://edu-sync-gold.vercel.app/pages/home.html?token={session_token}')
+        # Use POST/HttpOnly cookie ideally; for now redirect with token (existing behavior)
+        return redirect(f'{FRONTEND_ORIGIN}/pages/home.html?token={session_token}')
 
     except Exception as e:
         print("Google callback error:", e)
-        return redirect("https://edu-sync-gold.vercel.app/?error=auth_failed")
+        return redirect(f"{FRONTEND_ORIGIN}/?error=auth_failed")
 
 
 @app.post("/logout")
@@ -253,6 +271,14 @@ def verify_session():
 
         session_data = session_doc.to_dict()
 
+        # check expiry
+        expires_at = session_data.get("expires_at")
+        if expires_at and isinstance(expires_at, datetime):
+            if datetime.utcnow() > expires_at:
+                # session expired
+                sessions_ref.document(token).delete()
+                return jsonify({"success": False, "msg": "Session expired"}), 401
+
         return jsonify({
             "success": True,
             "user": {
@@ -272,13 +298,44 @@ def home():
     return "Backend with Firebase is running!"
 
 
-@app.get("/api/youtube-key")
-def get_youtube_key():
-    """إرجاع YouTube API Key للـ Frontend"""
-    youtube_key = os.getenv("API_KEY")
-    if not youtube_key:
-        return jsonify({"success": False, "msg": "YouTube API Key not configured"}), 500
-    return jsonify({"success": True, "key": youtube_key})
+@app.get("/youtube-search")
+def youtube_search():
+    """
+    Proxy endpoint: frontend calls this endpoint.
+    Backend uses API_KEY from environment (API_KEY) to call YouTube Data API.
+    """
+    try:
+        q = request.args.get("q")
+        max_results = request.args.get("max", 10)
+        if not q:
+            return jsonify({"error": "Missing query parameter 'q'"}), 400
+
+        YT_KEY = os.getenv("API_KEY")
+        if not YT_KEY:
+            return jsonify({"error": "YouTube API key not configured on server"}), 500
+
+        url = (
+            "https://www.googleapis.com/youtube/v3/search"
+            f"?part=snippet&type=video&maxResults={int(max_results)}"
+            f"&q={requests.utils.requote_uri(q)}&key={YT_KEY}"
+        )
+
+        r = requests.get(url, timeout=10)
+        if not r.ok:
+            # pass through useful error info (but don't expose the key)
+            try:
+                err_json = r.json()
+            except Exception:
+                err_json = {"status_code": r.status_code, "text": r.text}
+            print("YouTube API returned error:", err_json)
+            return jsonify({"error": "YouTube API error", "details": err_json}), 502
+
+        data = r.json()
+        return jsonify(data)
+
+    except Exception as e:
+        print("youtube_search error:", e)
+        return jsonify({"error": "Server error"}), 500
 
 
 if __name__ == "__main__":
