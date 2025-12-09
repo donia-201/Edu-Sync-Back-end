@@ -53,8 +53,7 @@ def create_session(user_id, username, email):
         "user_id": user_id,
         "username": username,
         "email": email,
-        "created_at": datetime.utcnow(),
-        "expires_at": datetime.utcnow() + timedelta(days=7)
+        "created_at": datetime.utcnow()
     }
     sessions_ref.document(token).set(session_data)
     return token
@@ -253,13 +252,6 @@ def verify_session():
             return jsonify({"success": False, "msg": "Invalid session"}), 401
 
         session_data = session_doc.to_dict()
-        
-        expires_at=session_data["expires_at"]
-        if hasattr(expires_at, 'timestamp'):
-            expires_at=datetime.fromtimestamp
-        if expires_at < datetime.utcnow():
-            sessions_ref.document(token).delete()
-            return jsonify({"success": False, "msg": "Session expired"}), 401
 
         return jsonify({
             "success": True,
