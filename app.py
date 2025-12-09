@@ -272,6 +272,15 @@ def home():
     return "Backend with Firebase is running!"
 
 
+@app.get("/api/youtube-key")
+def get_youtube_key():
+    """إرجاع YouTube API Key للـ Frontend"""
+    youtube_key = os.getenv("API_KEY")
+    if not youtube_key:
+        return jsonify({"success": False, "msg": "YouTube API Key not configured"}), 500
+    return jsonify({"success": True, "key": youtube_key})
+
+
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
     app.run(host="0.0.0.0", port=port)
