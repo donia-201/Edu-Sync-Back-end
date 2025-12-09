@@ -254,8 +254,10 @@ def verify_session():
 
         session_data = session_doc.to_dict()
         
-        # التحقق من انتهاء الصلاحية
-        if session_data["expires_at"] < datetime.utcnow():
+        expires_at=session_data["expires_at"]
+        if hasattr(expires_at, 'timestamp'):
+            expires_at=datetime.fromtimestamp
+        if expires_at < datetime.utcnow():
             sessions_ref.document(token).delete()
             return jsonify({"success": False, "msg": "Session expired"}), 401
 
