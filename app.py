@@ -305,6 +305,83 @@ def home():
 def youtube_search():
     """
     Proxy endpoint: frontend calls this endpoint.
+    Backend uses API_KEY from environment to call YouTube Data API.
+    """
+    try:
+        q = request.args.get("q", "").strip()
+        max_results = request.args.get("max", "10")
+        
+        if not q:
+            return jsonify({"error": "Missing query parameter 'q'"}), 400
+
+        YT_KEY = os.getenv("API_KEY")
+        if not YT_KEY:
+            print(" ERROR: API_KEY not found in environment variables")
+            return jsonify({
+                "error": "YouTube API key not configured",
+                "hint": "Add API_KEY to Railway environment variables"
+            }), 500
+
+        params = {
+            "part": "snippet",
+            "type": "video",
+            "maxResults": max_results,
+            "q": q,
+            "key": YT_KEY,
+            "order": "relevance", 
+            "videoEmbeddable": "true", 
+            "safeSearch": "moderate"  
+        }
+
+        url = "https://www.googleapis.com/youtube/v3/search"
+        
+        print(f"🔍 Searching YouTube for: '{q}' (max: {max_results})")
+        
+        r = requests.get(url, params=params, timeout=15)
+        
+        if not r.ok:
+            error_data = r.json() if r.headers.get('content-type', '').startswith('application/json') else {"text": r.text}
+            print(f" YouTube API Error {r.status_code}:")
+            print(f"   Response: {error_data}")
+            
+            if r.status_code == 403:
+                return jsonify({
+                    "error": "YouTube API quota exceeded or invalid key",
+                    "details": error_data
+                }), 403
+            elif r.status_code == 400:
+                return jsonify({
+                    "error": "Invalid YouTube API request",
+                    "details": error_data
+                }), 400
+            else:
+                return jsonify({
+                    "error": "YouTube API error",
+                    "status": r.status_code,
+                    "details": error_data
+                }), 502
+
+        data = r.json()
+        results_count = len(data.get('items', []))
+        print(f" YouTube returned {results_count} results")
+        
+        return jsonify(data)
+
+    except requests.exceptions.Timeout:
+        print("⏱️ YouTube API request timed out")
+        return jsonify({"error": "YouTube API timeout"}), 504
+        
+    except requests.exceptions.RequestException as e:
+        print(f"🌐 Network error: {str(e)}")
+        return jsonify({"error": "Network error", "details": str(e)}), 503
+        
+    except Exception as e:
+        print(f" Unexpected error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": "Server error", "details": str(e)}), 500
+    """
+    Proxy endpoint: frontend calls this endpoint.
     Backend uses API_KEY from environment (API_KEY) to call YouTube Data API.
     """
     try:
