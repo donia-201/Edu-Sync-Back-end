@@ -271,13 +271,14 @@ def verify_session():
 
         session_data = session_doc.to_dict()
 
-        # check expiry
+        # التحقق من انتهاء الصلاحية
         expires_at = session_data.get("expires_at")
-        if expires_at and isinstance(expires_at, datetime):
+
+        if isinstance(expires_at, datetime):
             if datetime.utcnow() > expires_at:
-                # session expired
-                # sessions_ref.document(token).delete()
-                # return jsonify({"success": False, "msg": "Session expired"}), 401
+                # حذف السيشن المنتهي
+                sessions_ref.document(token).delete()
+                return jsonify({"success": False, "msg": "Session expired"}), 401
 
         return jsonify({
             "success": True,
@@ -287,6 +288,10 @@ def verify_session():
                 "email": session_data["email"]
             }
         })
+
+    except Exception as e:
+        return jsonify({"success": False, "msg": str(e)}), 500
+
 
     except Exception as e:
         print("Verify session error:", e)
