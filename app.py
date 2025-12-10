@@ -255,8 +255,7 @@ def logout():
     except Exception as e:
         print("Logout error:", e)
         return jsonify({"success": False, "msg": "Logout failed"}), 500
-
-
+    
 @app.get("/verify-session")
 def verify_session():
     """التحقق من صلاحية الـ session"""
@@ -271,12 +270,15 @@ def verify_session():
 
         session_data = session_doc.to_dict()
 
-        # التحقق من انتهاء الصلاحية
         expires_at = session_data.get("expires_at")
-
-        if isinstance(expires_at, datetime):
-            if datetime.utcnow() > expires_at:
-                # حذف السيشن المنتهي
+        
+        if expires_at:
+            if hasattr(expires_at, 'timestamp'):
+                expires_datetime = datetime.fromtimestamp(expires_at.timestamp())
+            else:
+                expires_datetime = expires_at
+            
+            if datetime.utcnow() > expires_datetime:
                 sessions_ref.document(token).delete()
                 return jsonify({"success": False, "msg": "Session expired"}), 401
 
@@ -288,10 +290,6 @@ def verify_session():
                 "email": session_data["email"]
             }
         })
-
-    except Exception as e:
-        return jsonify({"success": False, "msg": str(e)}), 500
-
 
     except Exception as e:
         print("Verify session error:", e)
@@ -327,7 +325,6 @@ def youtube_search():
 
         r = requests.get(url, timeout=10)
         if not r.ok:
-            # pass through useful error info (but don't expose the key)
             try:
                 err_json = r.json()
             except Exception:
