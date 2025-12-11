@@ -28,13 +28,11 @@ def apply_cors(response):
     response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
     return response
 
-# Environment variables
 SERVICE_ACCOUNT_JSON = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 REDIRECT_URI = os.getenv("REDIRECT_URI", "https://edu-sync-back-end-production.up.railway.app/google-callback")
 
-# Initialize Firebase Admin if credentials present
 if SERVICE_ACCOUNT_JSON:
     try:
         cred = credentials.Certificate(json.loads(SERVICE_ACCOUNT_JSON))
@@ -70,8 +68,53 @@ def create_session(user_id, username, email, days_valid=7):
     return token
 
 
-@app.post("/signup")
+from werkzeug.security import generate_password_hash
+
+@app.route('/signup', methods=['POST'])
 def signup():
+    try:
+        data = request.get_json()
+        email = data.get('email')
+        username = data.get('username')
+        password = data.get('password')
+
+        if not email or not username or not password:
+            return jsonify({'message': 'Missing required fields'}), 400
+
+        email_results = db.collection('users').where(
+            filter=('email', '==', email)
+        ).limit(1).get()
+        
+        if len(email_results) > 0:
+            return jsonify({'message': 'Email already exists'}), 400
+
+        username_results = db.collection('users').where(
+            filter=('username', '==', username)
+        ).limit(1).get()
+        
+        if len(username_results) > 0:
+            return jsonify({'message': 'Username already exists'}), 400
+
+        hashed_password = generate_password_hash(password)
+
+        user_ref = db.collection('users').document()
+        user_ref.set({
+            'email': email,
+            'username': username,
+            'password': hashed_password,
+            'created_at': firestore.SERVER_TIMESTAMP
+        })
+
+        return jsonify({
+            'message': 'User created successfully',
+            'user_id': user_ref.id
+        }), 201
+
+    except Exception as e:
+        import traceback
+        print(f"Signup error: {str(e)}")
+        print(traceback.format_exc())
+        return jsonify({'message': 'Server error'}), 500
     try:
         data = request.get_json()
         if not data:
@@ -93,7 +136,6 @@ def signup():
 
         hashed_password = generate_password_hash(password)
 
-        # حفظ المستخدم في Firestore
         doc_ref = users_ref.add({
             "username": username,
             "email": email,
@@ -102,7 +144,6 @@ def signup():
             "created_at": datetime.utcnow()
         })
 
-        # doc_ref is (document_reference, write_time) -> document_reference is index 0
         user_id = doc_ref[0].id
         token = create_session(user_id, username, email)
 
@@ -300,6 +341,145 @@ def verify_session():
 def home():
     return "Backend with Firebase is running!"
 
+@app.get("/recommended-videos")
+def recommended_videos():
+    """
+    Get educational recommended videos based on user's study field or general educational topics
+    Returns ONLY educational content
+    """
+    try:
+        token = request.headers.get("Authorization", "").replace("Bearer ", "")
+        study_field = None
+        
+        if token:
+            session_doc = sessions_ref.document(token).get()
+            if session_doc.exists:
+                session_data = session_doc.to_dict()
+                user_id = session_data.get("user_id")
+                
+                user_doc = users_ref.document(user_id).get()
+                if user_doc.exists:
+                    user_data = user_doc.to_dict()
+                    study_field = user_data.get("study_field", "").strip().lower()
+        
+        STUDY_FIELD_KEYWORDS = {
+            "architecture": ["architecture tutorial", "architectural design", "building design"],
+            "ai": ["artificial intelligence course", "machine learning tutorial", "deep learning"],
+            "biology": ["biology lecture", "molecular biology", "genetics tutorial"],
+            "business administration": ["business management", "MBA course", "entrepreneurship"],
+            "chemistry": ["chemistry lecture", "organic chemistry", "chemistry tutorial"],
+            "computer science": ["computer science course", "programming tutorial", "data structures"],
+            "cyber security": ["cybersecurity tutorial", "ethical hacking", "network security"],
+            "data science": ["data science course", "python data analysis", "statistics tutorial"],
+            "education": ["teaching methods", "educational psychology", "pedagogy"],
+            "engineering": ["engineering tutorial", "mechanical engineering", "civil engineering"],
+            "graphic design": ["graphic design tutorial", "adobe photoshop", "design principles"],
+            "law": ["law lecture", "legal studies", "constitutional law"],
+            "marketing": ["digital marketing", "marketing strategy", "social media marketing"],
+            "mathematics": ["mathematics course", "calculus tutorial", "algebra"],
+            "medicine": ["medical lecture", "anatomy tutorial", "physiology course"],
+            "pharmacy": ["pharmacy course", "pharmacology", "pharmaceutical sciences"],
+            "physics": ["physics lecture", "quantum physics", "physics tutorial"],
+            "psychology": ["psychology course", "cognitive psychology", "behavioral psychology"],
+            "statistics": ["statistics course", "statistical analysis", "probability theory"],
+            "frontend": ["frontend development", "html css javascript", "react tutorial", "web design"],
+            "backend": ["backend development", "node.js tutorial", "express js course", "databases mysql mongodb"]
+        }
+        
+        default_topics = [
+            "programming tutorial",
+            "mathematics lesson",
+            "science education",
+            "language learning",
+            "history explained",
+            "physics tutorial",
+            "chemistry lesson",
+            "biology education"
+        ]
+        
+        search_queries = []
+        
+        if study_field:
+            if study_field in STUDY_FIELD_KEYWORDS:
+                search_queries = STUDY_FIELD_KEYWORDS[study_field]
+            else:
+                search_queries = [
+                    f"{study_field} tutorial",
+                    f"{study_field} course",
+                    f"{study_field} lecture",
+                    f"learn {study_field}"
+                ]
+        else:
+            search_queries = default_topics
+        
+        import random
+        search_query = random.choice(search_queries)
+        
+        max_results = request.args.get("max", "20")
+        
+        YT_KEY = os.getenv("API_KEY")
+        if not YT_KEY:
+            return jsonify({"error": "YouTube API key not configured"}), 500
+
+        params = {
+            "part": "snippet",
+            "type": "video",
+            "maxResults": max_results,
+            "q": search_query,
+            "videoCategoryId": "27", 
+            "safeSearch": "strict",
+            "videoEmbeddable": "true",
+            "order": "relevance",
+            "key": YT_KEY,
+        }
+
+        r = requests.get(
+            "https://www.googleapis.com/youtube/v3/search",
+            params=params,
+            timeout=15
+        )
+
+        if not r.ok:
+            try:
+                err = r.json()
+            except:
+                err = {"text": r.text}
+            return jsonify({
+                "error": "YouTube API error",
+                "status": r.status_code,
+                "details": err
+            }), 502
+
+        data = r.json()
+        items = data.get("items", [])
+
+        allowed_keywords = [
+            "tutorial", "course", "learn", "education", "explain",
+            "lesson", "how to", "guide", "teaching", "study",
+            "lecture", "class", "training", "beginner", "advanced",
+            "شرح", "تعليم", "محاضرة", "دورة", "كورس", "درس"
+        ]
+
+        def is_educational(item):
+            title = item["snippet"]["title"].lower()
+            description = item["snippet"]["description"].lower()
+            return any(kw in title or kw in description for kw in allowed_keywords)
+
+        filtered_items = [i for i in items if is_educational(i)]
+
+        return jsonify({
+            "items": filtered_items,
+            "total": len(filtered_items),
+            "search_query": search_query,
+            "study_field": study_field if study_field else "general",
+            "field_type": "predefined" if study_field in STUDY_FIELD_KEYWORDS else ("custom" if study_field else "general")
+        })
+
+    except Exception as e:
+        print("recommended_videos error:", e)
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": "Server error"}), 500
 
 @app.get("/youtube-search")
 def youtube_search():
