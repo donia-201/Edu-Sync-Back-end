@@ -304,6 +304,82 @@ def home():
 @app.get("/youtube-search")
 def youtube_search():
     """
+    Educational-only YouTube search endpoint.
+    Forces educational results even if user searches for unrelated topics.
+    """
+    try:
+        q = request.args.get("q", "").strip()
+        max_results = request.args.get("max", "10")
+
+        if not q:
+            return jsonify({"error": "Missing query parameter 'q'"}), 400
+
+        YT_KEY = os.getenv("API_KEY")
+        if not YT_KEY:
+            return jsonify({"error": "YouTube API key not configured"}), 500
+
+        # Force education category + strict safety
+        params = {
+            "part": "snippet",
+            "type": "video",
+            "maxResults": max_results,
+            "q": q,
+            "videoCategoryId": "27",      
+            "safeSearch": "strict",
+            "videoEmbeddable": "true",
+            "order": "relevance",
+            "key": YT_KEY,
+        }
+
+        r = requests.get(
+            "https://www.googleapis.com/youtube/v3/search",
+            params=params,
+            timeout=15
+        )
+
+        if not r.ok:
+            try:
+                err = r.json()
+            except:
+                err = {"text": r.text}
+            return jsonify({
+                "error": "YouTube API error",
+                "status": r.status_code,
+                "details": err
+            }), 502
+
+        data = r.json()
+        items = data.get("items", [])
+
+        # -------------------------------------------------------------------
+        # Local filtering to remove non-educational videos
+        # -------------------------------------------------------------------
+        allowed_keywords = [
+            "tutorial", "course", "learn", "education", "explain",
+            "lesson", "how to", "شرح", "تعليم", "محاضرة"
+        ]
+
+        def is_educational(item):
+            title = item["snippet"]["title"].lower()
+            return any(kw in title for kw in allowed_keywords)
+
+        filtered_items = [i for i in items if is_educational(i)]
+
+        # If filtered list is empty → fallback to raw category 27 results
+        if not filtered_items:
+            filtered_items = items
+
+        return jsonify({
+            "items": filtered_items,
+            "total": len(filtered_items),
+            "original_total": len(items)
+        })
+
+    except Exception as e:
+        print("youtube_search error:", e)
+        return jsonify({"error": "Server error"}), 500
+
+    """
     Proxy endpoint: frontend calls this endpoint.
     Backend uses API_KEY from environment to call YouTube Data API.
     """
