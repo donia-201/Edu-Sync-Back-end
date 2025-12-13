@@ -246,6 +246,44 @@ def verify_session():
         session_data = session_doc.to_dict()
         expires_at = session_data.get("expires_at")
 
+        # حل المشكلة: حوّل الـ Firestore Timestamp لـ datetime
+        if expires_at:
+            # لو Timestamp object من Firestore
+            if hasattr(expires_at, 'timestamp'):
+                from datetime import timezone
+                expires_at = datetime.fromtimestamp(expires_at.timestamp(), tz=timezone.utc).replace(tzinfo=None)
+            
+            # دلوقتي قارن
+            if datetime.utcnow() > expires_at:
+                sessions_ref.document(token).delete()
+                return jsonify({"success": False, "msg": "Session expired"}), 401
+
+        return jsonify({
+            "success": True,
+            "user": {
+                "id": session_data["user_id"],
+                "username": session_data["username"],
+                "email": session_data["email"]
+            }
+        })
+
+    except Exception as e:
+        print("Verify session error:", e)
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "msg": f"Verification failed: {str(e)}"}), 500
+    try:
+        token = request.headers.get("Authorization", "").replace("Bearer ", "")
+        if not token:
+            return jsonify({"success": False, "msg": "No token provided"}), 401
+
+        session_doc = sessions_ref.document(token).get()
+        if not session_doc.exists:
+            return jsonify({"success": False, "msg": "Invalid session"}), 401
+
+        session_data = session_doc.to_dict()
+        expires_at = session_data.get("expires_at")
+
         if expires_at and datetime.utcnow() > expires_at:
             sessions_ref.document(token).delete()
             return jsonify({"success": False, "msg": "Session expired"}), 401
