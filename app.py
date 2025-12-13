@@ -247,7 +247,6 @@ def verify_session():
         session_data = session_doc.to_dict()
         expires_at = session_data.get("expires_at")
 
-        # حل مشكلة Firestore Timestamp
         if expires_at:
             if hasattr(expires_at, 'timestamp'):
                 from datetime import timezone
@@ -285,31 +284,25 @@ def is_educational_content(video_item):
     title = snippet.get("title", "").lower()
     description = snippet.get("description", "").lower()
     
-    # كلمات محظورة فقط (الترفيه الواضح)
     banned_keywords = [
         # ألعاب
         "gameplay", "let's play", "gaming channel", "game walkthrough", "fortnite", 
         "minecraft", "pubg", "call of duty", "fifa", "ps5", "xbox",
         
-        # موسيقى ورقص
         "official music video", "official video", "music video", "مهرجان", "كليب",
         "dance cover", "choreography", "اغنية", "اغاني",
         
-        # ترفيه
         "prank", "funny moments", "comedy sketch", "stand up comedy",
         "reaction video", "تحدي", "برانك", "مقلب",
         
-        # أفلام ومسلسلات
         "trailer", "full movie", "episode", "مسلسل", "فيلم"
     ]
     
-    # لو فيه أي كلمة محظورة في العنوان -> نرفض
     text_to_check = title + " " + description
     for banned in banned_keywords:
         if banned in text_to_check:
             return False
     
-    # كل الباقي مقبول
     return True
 
 
@@ -328,10 +321,9 @@ def youtube_search():
             return jsonify({
                 "error": "YouTube API key not configured",
                 "hint": "Add API_KEY to environment variables",
-                "display_message": "⚠️ خطأ في الإعداد: مفتاح YouTube API غير موجود"
+                "display_message": "YouTube API is not exist"
             }), 500
 
-        # نطلب ضعف العدد عشان بعد الفلترة يبقى عندنا كفاية
         api_max_results = str(min(int(max_results) * 3, 50))
         
         params = {
@@ -357,41 +349,39 @@ def youtube_search():
                 err = {"text": r.text}
                 error_msg = f"HTTP {r.status_code}"
             
-            print(f"❌ YouTube API Error {r.status_code}:", err)
+            print(f" YouTube API Error {r.status_code}:", err)
             
             return jsonify({
                 "error": "YouTube API error",
                 "status": r.status_code,
                 "details": err,
-                "display_message": f"⚠️ خطأ في YouTube API: {error_msg}"
+                "display_message": f"error in YouTube API: {error_msg}"
             }), 502
 
         data = r.json()
         all_items = data.get("items", [])
         
-        print(f"📥 YouTube returned {len(all_items)} results")
+        print(f" YouTube returned {len(all_items)} results")
         
         if not all_items:
             return jsonify({
                 "items": [],
                 "total": 0,
-                "display_message": f"❌ لم يتم العثور على نتائج لـ '{q}'. جرب كلمات بحث أخرى."
+                "display_message": f" no videos match with'{q}' ,try another words"
             })
         
-        # تطبيق الفلترة الخفيفة
         filtered_items = [item for item in all_items if is_educational_content(item)]
         
-        # نحدد العدد المطلوب
         final_items = filtered_items[:int(max_results)]
         
-        print(f"✅ After filtering: {len(final_items)} videos")
-        print(f"🚫 Filtered out: {len(all_items) - len(filtered_items)} entertainment videos")
+        print(f" After filtering: {len(final_items)} videos")
+        print(f" Filtered out: {len(all_items) - len(filtered_items)} entertainment videos")
         
         if not final_items:
             return jsonify({
                 "items": [],
                 "total": 0,
-                "display_message": f"❌ لم يتم العثور على محتوى تعليمي لـ '{q}'. جرب كلمات أخرى مثل 'tutorial' أو 'course'."
+                "display_message": f" couldn't fine any educational content match with{q}', try another words like 'tutorial' or 'course'."
             })
 
         return jsonify({
@@ -399,29 +389,29 @@ def youtube_search():
             "total": len(final_items),
             "original_total": len(all_items),
             "filtered_count": len(all_items) - len(filtered_items),
-            "display_message": f"✅ تم العثور على {len(final_items)} فيديو"
+            "display_message": f" we found {len(final_items)} video"
         })
 
     except requests.exceptions.Timeout:
-        print("⏱️ YouTube API timeout")
+        print("⏱ YouTube API timeout")
         return jsonify({
             "error": "YouTube API timeout",
-            "display_message": "⚠️ انتهت مهلة الاتصال بـ YouTube. حاول مرة أخرى."
+            "display_message": " انتهت مهلة الاتصال بـ YouTube. حاول مرة أخرى."
         }), 504
     except requests.exceptions.RequestException as e:
-        print(f"🌐 Network error: {str(e)}")
+        print(f" Network error: {str(e)}")
         return jsonify({
             "error": "Network error",
             "details": str(e),
-            "display_message": "⚠️ خطأ في الاتصال بالإنترنت. تحقق من اتصالك."
+            "display_message": " خطأ في الاتصال بالإنترنت. تحقق من اتصالك."
         }), 503
     except Exception as e:
-        print(f"💥 youtube_search error: {str(e)}")
+        print(f" youtube_search error: {str(e)}")
         import traceback
         traceback.print_exc()
         return jsonify({
             "error": f"Server error: {str(e)}",
-            "display_message": "⚠️ حدث خطأ في السيرفر. حاول مرة أخرى لاحقاً."
+            "display_message": "    حدث خطأ في السيرفر. حاول مرة أخرى لاحقاً."
         }), 500
 
 
