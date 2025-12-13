@@ -234,6 +234,7 @@ def logout():
 
 @app.get("/verify-session")
 def verify_session():
+    """التحقق من صلاحية الـ session - نسخة واحدة فقط مُصلحة"""
     try:
         token = request.headers.get("Authorization", "").replace("Bearer ", "")
         if not token:
@@ -246,14 +247,12 @@ def verify_session():
         session_data = session_doc.to_dict()
         expires_at = session_data.get("expires_at")
 
-        # حل المشكلة: حوّل الـ Firestore Timestamp لـ datetime
+        # حل مشكلة Firestore Timestamp
         if expires_at:
-            # لو Timestamp object من Firestore
             if hasattr(expires_at, 'timestamp'):
                 from datetime import timezone
                 expires_at = datetime.fromtimestamp(expires_at.timestamp(), tz=timezone.utc).replace(tzinfo=None)
             
-            # دلوقتي قارن
             if datetime.utcnow() > expires_at:
                 sessions_ref.document(token).delete()
                 return jsonify({"success": False, "msg": "Session expired"}), 401
@@ -272,210 +271,151 @@ def verify_session():
         import traceback
         traceback.print_exc()
         return jsonify({"success": False, "msg": f"Verification failed: {str(e)}"}), 500
-    try:
-        token = request.headers.get("Authorization", "").replace("Bearer ", "")
-        if not token:
-            return jsonify({"success": False, "msg": "No token provided"}), 401
-
-        session_doc = sessions_ref.document(token).get()
-        if not session_doc.exists:
-            return jsonify({"success": False, "msg": "Invalid session"}), 401
-
-        session_data = session_doc.to_dict()
-        expires_at = session_data.get("expires_at")
-
-        if expires_at and datetime.utcnow() > expires_at:
-            sessions_ref.document(token).delete()
-            return jsonify({"success": False, "msg": "Session expired"}), 401
-
-        return jsonify({
-            "success": True,
-            "user": {
-                "id": session_data["user_id"],
-                "username": session_data["username"],
-                "email": session_data["email"]
-            }
-        })
-
-    except Exception as e:
-        print("Verify session error:", e)
-        return jsonify({"success": False, "msg": f"Verification failed: {str(e)}"}), 500
 
 @app.get("/")
 def home():
     return "Backend with Firebase is running!"
 
-@app.get("/recommended-videos")
-def recommended_videos():
-    try:
-        token = request.headers.get("Authorization", "").replace("Bearer ", "")
-        study_field = None
+def is_educational_content(video_item):
+    """
+    فلترة ذكية: يسمح بالمحتوى التعليمي ويمنع الترفيهي
+    """
+    snippet = video_item.get("snippet", {})
+    title = snippet.get("title", "").lower()
+    description = snippet.get("description", "").lower()
+    channel = snippet.get("channelTitle", "").lower()
+    
+    # كلمات تعليمية إيجابية
+    educational_keywords = [
+        "tutorial", "course", "learn", "education", "teach", "lesson", "lecture",
+        "guide", "how to", "explain", "study", "training", "class", "university",
+        "college", "school", "professor", "instructor", "programming", "coding",
+        "science", "math", "physics", "chemistry", "biology", "engineering",
+        "medicine", "pharmacy", "law", "business", "marketing", "design",
+        "development", "developer", "beginner", "advanced", "fundamental",
+        "introduction", "basics", "complete", "full course", "bootcamp",
+        "شرح", "تعليم", "درس", "محاضرة", "كورس", "دورة", "تدريب", "جامعة"
+    ]
+    
+    # كلمات ترفيهية سلبية (نمنعها)
+    entertainment_keywords = [
+        "game", "gaming", "gameplay", "lets play", "playing", "gamer",
+        "dance", "dancing", "song", "music video", "mv", "official video",
+        "concert", "live performance", "singing", "rapper", "hip hop",
+        "funny", "comedy", "prank", "challenge", "reaction", "vlog",
+        "unboxing", "haul", "makeup tutorial", "beauty", "fashion",
+        "مهرجان", "اغنية", "اغاني", "كليب", "موسيقى", "رقص", "لعبة", "العاب",
+        "فيلم", "مسلسل", "كوميدي", "مضحك", "تحدي", "فلوج", "برانك"
+    ]
+    
+    # قنوات تعليمية معروفة (نسمح بيها دايماً)
+    educational_channels = [
+        "ted", "khan academy", "crash course", "mit", "stanford",
+        "harvard", "udemy", "coursera", "edx", "freecodecamp",
+        "the coding train", "traversy media", "net ninja", "academind",
+        "elzero", "theNewBaghdad", "codezilla", "algorithm academy"
+    ]
+    
+    # فحص القنوات التعليمية المعروفة
+    if any(edu_channel in channel for edu_channel in educational_channels):
+        return True
+    
+    # عدد الكلمات التعليمية والترفيهية
+    edu_count = sum(1 for kw in educational_keywords if kw in title or kw in description)
+    entertainment_count = sum(1 for kw in entertainment_keywords if kw in title or kw in description)
+    
+    # قرار الفلترة:
+    # 1. لو فيه كلمات ترفيهية كتير (أكتر من 2) -> نرفض
+    if entertainment_count >= 2:
+        return False
+    
+    # 2. لو فيه كلمة ترفيهية واحدة بس ومفيش كلمات تعليمية -> نرفض
+    if entertainment_count >= 1 and edu_count == 0:
+        return False
+    
+    # 3. لو فيه كلمات تعليمية -> نقبل
+    if edu_count > 0:
+        return True
+    
+    # 4. لو مفيش كلمات ترفيهية ولا تعليمية -> نقبل (محايد)
+    if entertainment_count == 0:
+        return True
+    
+    # 5. في الحالات الباقية -> نرفض
+    return False
 
-        if token:
-            session_doc = sessions_ref.document(token).get()
-            if session_doc.exists:
-                session_data = session_doc.to_dict()
-                user_id = session_data.get("user_id")
-                user_doc = users_ref.document(user_id).get()
-                if user_doc.exists:
-                    user_data = user_doc.to_dict()
-                    study_field = user_data.get("study_field", "").strip().lower()
-
-        STUDY_FIELD_KEYWORDS = {
-            "architecture": ["architecture tutorial", "architectural design", "building design"],
-            "ai": ["artificial intelligence course", "machine learning tutorial", "deep learning"],
-            "biology": ["biology lecture", "molecular biology", "genetics tutorial"],
-            "business administration": ["business management", "MBA course", "entrepreneurship"],
-            "chemistry": ["chemistry lecture", "organic chemistry", "chemistry tutorial"],
-            "computer science": ["computer science course", "programming tutorial", "data structures"],
-            "cyber security": ["cybersecurity tutorial", "ethical hacking", "network security"],
-            "data science": ["data science course", "python data analysis", "statistics tutorial"],
-            "education": ["teaching methods", "educational psychology", "pedagogy"],
-            "engineering": ["engineering tutorial", "mechanical engineering", "civil engineering"],
-            "graphic design": ["graphic design tutorial", "adobe photoshop", "design principles"],
-            "law": ["law lecture", "legal studies", "constitutional law"],
-            "marketing": ["digital marketing", "marketing strategy", "social media marketing"],
-            "mathematics": ["mathematics course", "calculus tutorial", "algebra"],
-            "medicine": ["medical lecture", "anatomy tutorial", "physiology course"],
-            "pharmacy": ["pharmacy course", "pharmacology", "pharmaceutical sciences"],
-            "physics": ["physics lecture", "quantum physics", "physics tutorial"],
-            "psychology": ["psychology course", "cognitive psychology", "behavioral psychology"],
-            "statistics": ["statistics course", "statistical analysis", "probability theory"],
-            "frontend": ["frontend development", "html css javascript", "react tutorial", "web design"],
-            "backend": ["backend development", "node.js tutorial", "express js course", "databases mysql mongodb"]
-        }
-
-        default_topics = [
-            "programming tutorial", "mathematics lesson", "science education",
-            "language learning", "history explained", "physics tutorial",
-            "chemistry lesson", "biology education"
-        ]
-
-        search_queries = STUDY_FIELD_KEYWORDS.get(study_field, default_topics) if study_field else default_topics
-        if study_field and study_field not in STUDY_FIELD_KEYWORDS:
-            search_queries = [f"{study_field} tutorial", f"{study_field} course", f"{study_field} lecture", f"learn {study_field}"]
-
-        import random
-        search_query = random.choice(search_queries)
-
-        max_results = request.args.get("max", "20")
-        YT_KEY = os.getenv("API_KEY")
-        if not YT_KEY:
-            return jsonify({"error": "YouTube API key not configured"}), 500
-
-        params = {
-            "part": "snippet",
-            "type": "video",
-            "maxResults": max_results,
-            "q": search_query,
-            "videoCategoryId": "27",
-            "safeSearch": "strict",
-            "videoEmbeddable": "true",
-            "order": "relevance",
-            "key": YT_KEY
-        }
-
-        r = requests.get("https://www.googleapis.com/youtube/v3/search", params=params, timeout=15)
-        if not r.ok:
-            try:
-                err = r.json()
-            except:
-                err = {"text": r.text}
-            return jsonify({"error": "YouTube API error", "status": r.status_code, "details": err}), 502
-
-        data = r.json()
-        items = data.get("items", [])
-
-        allowed_keywords = [
-            "tutorial", "course", "learn", "education", "explain", "lesson", "how to", 
-            "guide", "teaching", "study", "lecture", "class", "training", "beginner", 
-            "advanced", "شرح", "تعليم", "محاضرة", "دورة", "كورس", "درس"
-        ]
-
-        def is_educational(item):
-            title = item["snippet"]["title"].lower()
-            description = item["snippet"]["description"].lower()
-            return any(kw in title or kw in description for kw in allowed_keywords)
-
-        filtered_items = [i for i in items if is_educational(i)]
-
-        return jsonify({
-            "items": filtered_items,
-            "total": len(filtered_items),
-            "search_query": search_query,
-            "study_field": study_field if study_field else "general",
-            "field_type": "predefined" if study_field in STUDY_FIELD_KEYWORDS else ("custom" if study_field else "general")
-        })
-
-    except Exception as e:
-        print("recommended_videos error:", e)
-        import traceback
-        traceback.print_exc()
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
 
 @app.get("/youtube-search")
 def youtube_search():
+    """بحث YouTube مع فلترة ذكية للمحتوى التعليمي"""
     try:
         q = request.args.get("q", "").strip()
         max_results = request.args.get("max", "10")
+        
         if not q:
             return jsonify({"error": "Missing query parameter 'q'"}), 400
 
         YT_KEY = os.getenv("API_KEY")
         if not YT_KEY:
+            print("❌ ERROR: API_KEY not found")
             return jsonify({"error": "YouTube API key not configured"}), 500
 
+        # نطلب أكتر من المطلوب عشان بعد الفلترة نوصل للعدد المطلوب
+        api_max_results = str(int(max_results) * 2)
+        
         params = {
             "part": "snippet",
             "type": "video",
-            "maxResults": max_results,
+            "maxResults": api_max_results,
             "q": q,
-            "videoCategoryId": "27",
-            "safeSearch": "strict",
-            "videoEmbeddable": "true",
+            "videoCategoryId": "27",  # Education category
             "order": "relevance",
+            "videoEmbeddable": "true",
+            "safeSearch": "strict",
             "key": YT_KEY
         }
 
+        print(f"🔍 Searching YouTube: '{q}' (requesting: {api_max_results})")
+        
         r = requests.get("https://www.googleapis.com/youtube/v3/search", params=params, timeout=15)
+        
         if not r.ok:
             try:
                 err = r.json()
             except:
                 err = {"text": r.text}
+            print(f"❌ YouTube API Error {r.status_code}:", err)
             return jsonify({"error": "YouTube API error", "status": r.status_code, "details": err}), 502
 
         data = r.json()
-        items = data.get("items", [])
-
-        allowed_keywords = [
-            "tutorial", "course", "learn", "education", "explain", "lesson", "how to",
-            "شرح", "تعليم", "محاضرة"
-        ]
-
-        def is_educational(item):
-            title = item["snippet"]["title"].lower()
-            description = item["snippet"]["description"].lower()
-            return any(kw in title or kw in description for kw in allowed_keywords)
-
-        filtered_items = [i for i in items if is_educational(i)]
-        if not filtered_items:
-            filtered_items = items
+        all_items = data.get("items", [])
+        
+        print(f"📥 YouTube returned {len(all_items)} results")
+        
+        # تطبيق الفلترة الذكية
+        filtered_items = [item for item in all_items if is_educational_content(item)]
+        
+        # نحدد العدد المطلوب فقط
+        final_items = filtered_items[:int(max_results)]
+        
+        print(f"✅ After filtering: {len(final_items)} educational videos")
+        print(f"🚫 Filtered out: {len(all_items) - len(filtered_items)} non-educational videos")
 
         return jsonify({
-            "items": filtered_items,
-            "total": len(filtered_items),
-            "original_total": len(items)
+            "items": final_items,
+            "total": len(final_items),
+            "original_total": len(all_items),
+            "filtered_count": len(all_items) - len(filtered_items)
         })
 
     except requests.exceptions.Timeout:
-        print("YouTube API request timed out")
+        print("⏱️ YouTube API timeout")
         return jsonify({"error": "YouTube API timeout"}), 504
     except requests.exceptions.RequestException as e:
-        print(f"Network error: {str(e)}")
+        print(f"🌐 Network error: {str(e)}")
         return jsonify({"error": "Network error", "details": str(e)}), 503
     except Exception as e:
-        print(f"youtube_search error: {str(e)}")
+        print(f"💥 youtube_search error: {str(e)}")
         import traceback
         traceback.print_exc()
         return jsonify({"error": f"Server error: {str(e)}"}), 500
