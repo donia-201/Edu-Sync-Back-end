@@ -234,7 +234,7 @@ def logout():
 
 @app.get("/verify-session")
 def verify_session():
-    """التحقق من صلاحية الـ session - نسخة واحدة فقط مُصلحة"""
+    """التحقق من صلاحية الـ session"""
     try:
         token = request.headers.get("Authorization", "").replace("Bearer ", "")
         if not token:
@@ -276,78 +276,46 @@ def verify_session():
 def home():
     return "Backend with Firebase is running!"
 
+
 def is_educational_content(video_item):
     """
-    فلترة ذكية: يسمح بالمحتوى التعليمي ويمنع الترفيهي
+    فلترة خفيفة جداً: فقط يمنع المحتوى الترفيهي الواضح
     """
     snippet = video_item.get("snippet", {})
     title = snippet.get("title", "").lower()
     description = snippet.get("description", "").lower()
-    channel = snippet.get("channelTitle", "").lower()
     
-    # كلمات تعليمية إيجابية
-    educational_keywords = [
-        "tutorial", "course", "learn", "education", "teach", "lesson", "lecture",
-        "guide", "how to", "explain", "study", "training", "class", "university",
-        "college", "school", "professor", "instructor", "programming", "coding",
-        "science", "math", "physics", "chemistry", "biology", "engineering",
-        "medicine", "pharmacy", "law", "business", "marketing", "design",
-        "development", "developer", "beginner", "advanced", "fundamental",
-        "introduction", "basics", "complete", "full course", "bootcamp",
-        "شرح", "تعليم", "درس", "محاضرة", "كورس", "دورة", "تدريب", "جامعة"
+    # كلمات محظورة فقط (الترفيه الواضح)
+    banned_keywords = [
+        # ألعاب
+        "gameplay", "let's play", "gaming channel", "game walkthrough", "fortnite", 
+        "minecraft", "pubg", "call of duty", "fifa", "ps5", "xbox",
+        
+        # موسيقى ورقص
+        "official music video", "official video", "music video", "مهرجان", "كليب",
+        "dance cover", "choreography", "اغنية", "اغاني",
+        
+        # ترفيه
+        "prank", "funny moments", "comedy sketch", "stand up comedy",
+        "reaction video", "تحدي", "برانك", "مقلب",
+        
+        # أفلام ومسلسلات
+        "trailer", "full movie", "episode", "مسلسل", "فيلم"
     ]
     
-    # كلمات ترفيهية سلبية (نمنعها)
-    entertainment_keywords = [
-        "game", "gaming", "gameplay", "lets play", "playing", "gamer",
-        "dance", "dancing", "song", "music video", "mv", "official video",
-        "concert", "live performance", "singing", "rapper", "hip hop",
-        "funny", "comedy", "prank", "challenge", "reaction", "vlog",
-        "unboxing", "haul", "makeup tutorial", "beauty", "fashion",
-        "مهرجان", "اغنية", "اغاني", "كليب", "موسيقى", "رقص", "لعبة", "العاب",
-        "فيلم", "مسلسل", "كوميدي", "مضحك", "تحدي", "فلوج", "برانك"
-    ]
+    # لو فيه أي كلمة محظورة في العنوان -> نرفض
+    text_to_check = title + " " + description
+    for banned in banned_keywords:
+        if banned in text_to_check:
+            return False
     
-    # قنوات تعليمية معروفة (نسمح بيها دايماً)
-    educational_channels = [
-        "ted", "khan academy", "crash course", "mit", "stanford",
-        "harvard", "udemy", "coursera", "edx", "freecodecamp",
-        "the coding train", "traversy media", "net ninja", "academind",
-        "elzero", "theNewBaghdad", "codezilla", "algorithm academy"
-    ]
-    
-    # فحص القنوات التعليمية المعروفة
-    if any(edu_channel in channel for edu_channel in educational_channels):
-        return True
-    
-    # عدد الكلمات التعليمية والترفيهية
-    edu_count = sum(1 for kw in educational_keywords if kw in title or kw in description)
-    entertainment_count = sum(1 for kw in entertainment_keywords if kw in title or kw in description)
-    
-    # قرار الفلترة:
-    # 1. لو فيه كلمات ترفيهية كتير (أكتر من 2) -> نرفض
-    if entertainment_count >= 2:
-        return False
-    
-    # 2. لو فيه كلمة ترفيهية واحدة بس ومفيش كلمات تعليمية -> نرفض
-    if entertainment_count >= 1 and edu_count == 0:
-        return False
-    
-    # 3. لو فيه كلمات تعليمية -> نقبل
-    if edu_count > 0:
-        return True
-    
-    # 4. لو مفيش كلمات ترفيهية ولا تعليمية -> نقبل (محايد)
-    if entertainment_count == 0:
-        return True
-    
-    # 5. في الحالات الباقية -> نرفض
-    return False
+    # كل الباقي مقبول
+    return True
 
 
 @app.get("/youtube-search")
 def youtube_search():
-    """بحث YouTube مع فلترة ذكية للمحتوى التعليمي"""
+    """بحث YouTube مع فلترة خفيفة جداً"""
     try:
         q = request.args.get("q", "").strip()
         max_results = request.args.get("max", "10")
@@ -357,21 +325,23 @@ def youtube_search():
 
         YT_KEY = os.getenv("API_KEY")
         if not YT_KEY:
-            print("❌ ERROR: API_KEY not found")
-            return jsonify({"error": "YouTube API key not configured"}), 500
+            return jsonify({
+                "error": "YouTube API key not configured",
+                "hint": "Add API_KEY to environment variables",
+                "display_message": "⚠️ خطأ في الإعداد: مفتاح YouTube API غير موجود"
+            }), 500
 
-        # نطلب أكتر من المطلوب عشان بعد الفلترة نوصل للعدد المطلوب
-        api_max_results = str(int(max_results) * 2)
+        # نطلب ضعف العدد عشان بعد الفلترة يبقى عندنا كفاية
+        api_max_results = str(min(int(max_results) * 3, 50))
         
         params = {
             "part": "snippet",
             "type": "video",
             "maxResults": api_max_results,
             "q": q,
-            "videoCategoryId": "27",  # Education category
             "order": "relevance",
             "videoEmbeddable": "true",
-            "safeSearch": "strict",
+            "safeSearch": "moderate",
             "key": YT_KEY
         }
 
@@ -382,43 +352,78 @@ def youtube_search():
         if not r.ok:
             try:
                 err = r.json()
+                error_msg = err.get('error', {}).get('message', 'Unknown error')
             except:
                 err = {"text": r.text}
+                error_msg = f"HTTP {r.status_code}"
+            
             print(f"❌ YouTube API Error {r.status_code}:", err)
-            return jsonify({"error": "YouTube API error", "status": r.status_code, "details": err}), 502
+            
+            return jsonify({
+                "error": "YouTube API error",
+                "status": r.status_code,
+                "details": err,
+                "display_message": f"⚠️ خطأ في YouTube API: {error_msg}"
+            }), 502
 
         data = r.json()
         all_items = data.get("items", [])
         
         print(f"📥 YouTube returned {len(all_items)} results")
         
-        # تطبيق الفلترة الذكية
+        if not all_items:
+            return jsonify({
+                "items": [],
+                "total": 0,
+                "display_message": f"❌ لم يتم العثور على نتائج لـ '{q}'. جرب كلمات بحث أخرى."
+            })
+        
+        # تطبيق الفلترة الخفيفة
         filtered_items = [item for item in all_items if is_educational_content(item)]
         
-        # نحدد العدد المطلوب فقط
+        # نحدد العدد المطلوب
         final_items = filtered_items[:int(max_results)]
         
-        print(f"✅ After filtering: {len(final_items)} educational videos")
-        print(f"🚫 Filtered out: {len(all_items) - len(filtered_items)} non-educational videos")
+        print(f"✅ After filtering: {len(final_items)} videos")
+        print(f"🚫 Filtered out: {len(all_items) - len(filtered_items)} entertainment videos")
+        
+        if not final_items:
+            return jsonify({
+                "items": [],
+                "total": 0,
+                "display_message": f"❌ لم يتم العثور على محتوى تعليمي لـ '{q}'. جرب كلمات أخرى مثل 'tutorial' أو 'course'."
+            })
 
         return jsonify({
             "items": final_items,
             "total": len(final_items),
             "original_total": len(all_items),
-            "filtered_count": len(all_items) - len(filtered_items)
+            "filtered_count": len(all_items) - len(filtered_items),
+            "display_message": f"✅ تم العثور على {len(final_items)} فيديو"
         })
 
     except requests.exceptions.Timeout:
         print("⏱️ YouTube API timeout")
-        return jsonify({"error": "YouTube API timeout"}), 504
+        return jsonify({
+            "error": "YouTube API timeout",
+            "display_message": "⚠️ انتهت مهلة الاتصال بـ YouTube. حاول مرة أخرى."
+        }), 504
     except requests.exceptions.RequestException as e:
         print(f"🌐 Network error: {str(e)}")
-        return jsonify({"error": "Network error", "details": str(e)}), 503
+        return jsonify({
+            "error": "Network error",
+            "details": str(e),
+            "display_message": "⚠️ خطأ في الاتصال بالإنترنت. تحقق من اتصالك."
+        }), 503
     except Exception as e:
         print(f"💥 youtube_search error: {str(e)}")
         import traceback
         traceback.print_exc()
-        return jsonify({"error": f"Server error: {str(e)}"}), 500
+        return jsonify({
+            "error": f"Server error: {str(e)}",
+            "display_message": "⚠️ حدث خطأ في السيرفر. حاول مرة أخرى لاحقاً."
+        }), 500
+
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
