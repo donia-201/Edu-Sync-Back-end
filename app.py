@@ -11,6 +11,10 @@ from google.auth.transport import requests as google_requests
 import requests
 import secrets
 from datetime import datetime, timedelta
+from google.oauth2.credentials import Credentials
+from googleapiclient.discovery import build
+from urllib.parse import urlencode
+
 
 
 app = Flask(__name__)
@@ -80,6 +84,13 @@ SERVICE_ACCOUNT_JSON = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
 REDIRECT_URI = os.getenv("REDIRECT_URI", "https://edu-sync-back-end-production.up.railway.app/google-callback")
+REDIRECT_URI_CALENDAR="https://edu-sync-back-end-production.up.railway.app/google-calendar-callback"
+REDIRECT_URI_CALENDAR = os.getenv(
+    "REDIRECT_URI_CALENDAR",
+    "https://edu-sync-back-end-production.up.railway.app/google-calendar-callback"
+)
+CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events"
+
 
 if SERVICE_ACCOUNT_JSON:
     try:
@@ -111,6 +122,17 @@ def create_session(user_id, username, email, days_valid=7):
     }
     sessions_ref.document(token).set(session_data)
     return token
+
+def get_calendar_service(refresh_token):
+    creds = Credentials(
+        token=None,
+        refresh_token=refresh_token,
+        token_uri="https://oauth2.googleapis.com/token",
+        client_id=GOOGLE_CLIENT_ID,
+        client_secret=GOOGLE_CLIENT_SECRET
+    )
+    return build("calendar", "v3", credentials=creds)
+
 
 @app.route('/signup', methods=['POST'])
 def signup():
@@ -269,6 +291,64 @@ def google_callback():
     except Exception as e:
         print("Google callback error:", e)
         return redirect(f"{FRONTEND_ORIGIN}/?error=auth_failed")
+
+@app.get("/connect-google-calendar")
+@require_auth
+def connect_google_calendar():
+    user_id = request.user_data["user_id"]
+
+    params = {
+        "client_id": GOOGLE_CLIENT_ID,
+        "redirect_uri": REDIRECT_URI_CALENDAR,
+        "response_type": "code",
+        "scope": CALENDAR_SCOPE,
+        "access_type": "offline",
+        "prompt": "consent",
+        "state": user_id
+    }
+
+    auth_url = "https://accounts.google.com/o/oauth2/v2/auth?" + urlencode(params)
+    return redirect(auth_url)
+
+@app.get("/google-calendar-callback")
+def google_calendar_callback():
+    try:
+        code = request.args.get("code")
+        user_id = request.args.get("state")
+
+        if not code or not user_id:
+            return redirect(f"{FRONTEND_ORIGIN}/?error=calendar_auth_failed")
+
+        token_url = "https://oauth2.googleapis.com/token"
+        data = {
+            "code": code,
+            "client_id": GOOGLE_CLIENT_ID,
+            "client_secret": GOOGLE_CLIENT_SECRET,
+            "redirect_uri": REDIRECT_URI_CALENDAR,
+            "grant_type": "authorization_code"
+        }
+
+        r = requests.post(token_url, data=data)
+        if not r.ok:
+            print("Calendar token error:", r.text)
+            return redirect(f"{FRONTEND_ORIGIN}/?error=calendar_token_failed")
+
+        token_data = r.json()
+        refresh_token = token_data.get("refresh_token")
+
+        if not refresh_token:
+            return redirect(f"{FRONTEND_ORIGIN}/?error=no_refresh_token")
+
+        users_ref.document(user_id).update({
+            "google_calendar_refresh_token": refresh_token
+        })
+
+        return redirect(f"{FRONTEND_ORIGIN}/pages/home.html?calendar=connected")
+
+    except Exception as e:
+        print("Calendar callback error:", e)
+        return redirect(f"{FRONTEND_ORIGIN}/?error=calendar_auth_failed")
+
 
 @app.post("/logout")
 def logout():
@@ -589,6 +669,158 @@ def reorder_notes():
     except Exception as e:
         print(f"Error reordering notes: {e}")
         return jsonify({'error': 'Failed to reorder notes', 'success': False}), 500
+
+# -------------events -----------
+@app.post("/api/events")
+@require_auth
+def create_event():
+    try:
+        user_id = request.user_data["user_id"]
+        data = request.get_json()
+
+        required = ["title", "start", "end", "type"]
+        if not data or not all(k in data for k in required):
+            return jsonify({"success": False, "msg": "Missing fields"}), 400
+
+        user_doc = users_ref.document(user_id).get()
+        if not user_doc.exists:
+            return jsonify({"success": False, "msg": "User not found"}), 404
+
+        user_data = user_doc.to_dict()
+        refresh_token = user_data.get("google_calendar_refresh_token")
+
+        if not refresh_token:
+            return jsonify({
+                "success": False,
+                "msg": "Google Calendar not connected"
+            }), 403
+
+        service = get_calendar_service(refresh_token)
+
+        event_body = {
+            "summary": data["title"],
+            "description": data.get("description", ""),
+            "start": {
+                "dateTime": data["start"],
+                "timeZone": "Africa/Cairo"
+            },
+            "end": {
+                "dateTime": data["end"],
+                "timeZone": "Africa/Cairo"
+            }
+        }
+
+        google_event = service.events().insert(
+            calendarId="primary",
+            body=event_body
+        ).execute()
+
+        event_ref = db.collection("users") \
+            .document(user_id) \
+            .collection("events") \
+            .add({
+                "title": data["title"],
+                "description": data.get("description", ""),
+                "type": data["type"],
+                "start": data["start"],
+                "end": data["end"],
+                "google_event_id": google_event["id"],
+                "createdAt": firestore.SERVER_TIMESTAMP
+            })
+
+        return jsonify({
+            "success": True,
+            "event_id": event_ref[1].id
+        }), 201
+
+    except Exception as e:
+        print("Create event error:", e)
+        return jsonify({"success": False, "msg": "Failed to create event"}), 500
+
+@app.get("/api/events")
+@require_auth
+def get_events():
+    try:
+        user_id = request.user_data["user_id"]
+        events_ref = db.collection("users").document(user_id).collection("events")
+
+        events_docs = events_ref.order_by("start").stream()  # بدل start_time
+
+        events = []
+        for doc in events_docs:
+            data = doc.to_dict()
+            data["id"] = doc.id
+            events.append(data)
+
+        return jsonify({"success": True, "events": events})
+
+    except Exception as e:
+        print("Get events error:", e)
+        return jsonify({"success": False, "msg": "Failed to fetch events"}), 500
+
+@app.put("/api/events/<event_id>")
+@require_auth
+def update_event(event_id):
+    try:
+        user_id = request.user_data["user_id"]
+        data = request.get_json()
+
+        event_ref = (
+            db.collection("users")
+            .document(user_id)
+            .collection("events")
+            .document(event_id)
+        )
+
+        if not event_ref.get().exists:
+            return jsonify({"success": False, "msg": "Event not found"}), 404
+
+        update_data = {
+            "updatedAt": datetime.utcnow().isoformat()
+        }
+
+        for field in ["title", "description", "start", "end"]:
+            if field in data:
+                update_data[field] = data[field]
+
+        event_ref.update(update_data)
+
+        updated = event_ref.get().to_dict()
+        updated["id"] = event_id
+
+        return jsonify({"success": True, "event": updated})
+
+    except Exception as e:
+        print("Update event error:", e)
+        return jsonify({"success": False, "msg": "Failed to update event"}), 500
+
+
+
+@app.delete("/api/events/<event_id>")
+@require_auth
+def delete_event(event_id):
+    try:
+        user_id = request.user_data["user_id"]
+
+        event_ref = (
+            db.collection("users")
+            .document(user_id)
+            .collection("events")
+            .document(event_id)
+        )
+
+        if not event_ref.get().exists:
+            return jsonify({"success": False, "msg": "Event not found"}), 404
+
+        event_ref.delete()
+
+        return jsonify({"success": True, "msg": "Event deleted"})
+
+    except Exception as e:
+        print("Delete event error:", e)
+        return jsonify({"success": False, "msg": "Failed to delete event"}), 500
+
+
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
