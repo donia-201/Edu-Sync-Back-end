@@ -11,7 +11,6 @@ from google.auth.transport import requests as google_requests
 import requests
 import secrets
 from datetime import datetime, timedelta
-from flask_jwt_extended import jwt_required, get_jwt_identity
 
 
 app = Flask(__name__)
