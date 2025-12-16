@@ -74,6 +74,7 @@ CORS(app, resources={
     }
 })
 
+
 # Initialize Firebase
 SERVICE_ACCOUNT_JSON = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
@@ -462,15 +463,15 @@ def youtube_search():
             "display_message": "    حدث خطأ في السيرفر. حاول مرة أخرى لاحقاً."
         }), 500
 
-# ===== Notes API Routes =====
-
+# -------------Notes API Routes-----------------
 @app.route('/api/notes', methods=['GET'])
 @require_auth
 def get_notes():
-    """Get all notes for the current user"""
+    """الحصول على جميع الملاحظات الخاصة بالمستخدم الحالي"""
     try:
         user_id = request.user_data['user_id']
         notes_ref = db.collection('users').document(user_id).collection('notes')
+        
         notes_docs = notes_ref.order_by('createdAt', direction=firestore.Query.DESCENDING).stream()
         
         notes_list = []
@@ -482,15 +483,13 @@ def get_notes():
         return jsonify({'notes': notes_list, 'success': True})
     except Exception as e:
         print(f"Error fetching notes: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e), 'success': False}), 500
+        return jsonify({'error': 'Failed to fetch notes', 'success': False}), 500
 
 
 @app.route('/api/notes', methods=['POST'])
 @require_auth
 def create_note():
-    """Create a new note"""
+    """إنشاء ملاحظة جديدة"""
     try:
         user_id = request.user_data['user_id']
         data = request.get_json()
@@ -522,15 +521,13 @@ def create_note():
         return jsonify({'note': note_data, 'success': True}), 201
     except Exception as e:
         print(f"Error creating note: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e), 'success': False}), 500
+        return jsonify({'error': 'Failed to create note', 'success': False}), 500
 
 
 @app.route('/api/notes/<note_id>', methods=['PUT'])
 @require_auth
 def update_note(note_id):
-    """Update an existing note"""
+    """تحديث ملاحظة موجودة (PUT)"""
     try:
         user_id = request.user_data['user_id']
         data = request.get_json()
@@ -538,6 +535,8 @@ def update_note(note_id):
         if not data:
             return jsonify({'error': 'Invalid data', 'success': False}), 400
         
+        print(f"Update received for Note ID: {note_id}, Data: {data}")
+
         update_data = {
             'updatedAt': datetime.utcnow().isoformat()
         }
@@ -554,43 +553,19 @@ def update_note(note_id):
         
         note_ref.update(update_data)
         
+        print(f"Note {note_id} updated successfully in Firestore with content: {update_data.get('content')}") 
+
         updated_note = note_ref.get().to_dict()
         updated_note['id'] = note_id
         
         return jsonify({'note': updated_note, 'success': True})
     except Exception as e:
         print(f"Error updating note: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e), 'success': False}), 500
-
-
-@app.route('/api/notes/<note_id>', methods=['DELETE'])
-@require_auth
-def delete_note(note_id):
-    """Delete a note"""
-    try:
-        user_id = request.user_data['user_id']
-        
-        note_ref = db.collection('users').document(user_id).collection('notes').document(note_id)
-        
-        if not note_ref.get().exists:
-            return jsonify({'error': 'Note not found', 'success': False}), 404
-        
-        note_ref.delete()
-        
-        return jsonify({'message': 'Note deleted successfully', 'success': True})
-    except Exception as e:
-        print(f"Error deleting note: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e), 'success': False}), 500
-
-
+        return jsonify({'error': 'Failed to update note', 'success': False}), 500
 @app.route('/api/notes/reorder', methods=['POST'])
 @require_auth
 def reorder_notes():
-    """Update the order of notes"""
+    """تحديث ترتيب الملاحظات (إرسال ID بترتيب جديد)"""
     try:
         user_id = request.user_data['user_id']
         data = request.get_json()
@@ -613,10 +588,7 @@ def reorder_notes():
         return jsonify({'message': 'Order updated successfully', 'success': True})
     except Exception as e:
         print(f"Error reordering notes: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'error': str(e), 'success': False}), 500
-
+        return jsonify({'error': 'Failed to reorder notes', 'success': False}), 500
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
