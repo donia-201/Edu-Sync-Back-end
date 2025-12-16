@@ -11,13 +11,69 @@ from google.auth.transport import requests as google_requests
 import requests
 import secrets
 from datetime import datetime, timedelta
+from flask_jwt_extended import jwt_required, get_jwt_identity
+
 
 app = Flask(__name__)
 
+def verify_session_token(token):
+    """التحقق من صلاحية الـ session token"""
+    try:
+        if not token:
+            return None
+        
+        session_doc = sessions_ref.document(token).get()
+        if not session_doc.exists:
+            return None
+        
+        session_data = session_doc.to_dict()
+        expires_at = session_data.get("expires_at")
+        
+        if expires_at:
+            if hasattr(expires_at, 'timestamp'):
+                from datetime import timezone
+                expires_at = datetime.fromtimestamp(expires_at.timestamp(), tz=timezone.utc).replace(tzinfo=None)
+            
+            if datetime.utcnow() > expires_at:
+                sessions_ref.document(token).delete()
+                return None
+        
+        return session_data
+    except Exception as e:
+        print(f"Session verification error: {e}")
+        return None
+
+def require_auth(f):
+    """Decorator للتحقق من الـ authentication"""
+    from functools import wraps
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        token = request.headers.get("Authorization", "").replace("Bearer ", "")
+        
+        if not token:
+            # Try to get from cookie
+            token = request.cookies.get("session_token")
+        
+        session_data = verify_session_token(token)
+        
+        if not session_data:
+            return jsonify({"success": False, "msg": "Unauthorized"}), 401
+        
+        # Pass user data to the route
+        request.user_data = session_data
+        return f(*args, **kwargs)
+    
+    return decorated_function
 # Use a specific origin for CORS
 FRONTEND_ORIGIN = os.getenv("FRONTEND_ORIGIN", "https://edu-sync-gold.vercel.app")
-CORS(app, resources={r"/*": {"origins": FRONTEND_ORIGIN}}, supports_credentials=True)
-
+CORS(app, resources={
+    r"/*": {
+        "origins": [FRONTEND_ORIGIN, "http://localhost:5000", "http://127.0.0.1:5000"],
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["Content-Type", "Authorization"],
+        "supports_credentials": True
+    }
+})
 @app.after_request
 def apply_cors(response):
     response.headers["Access-Control-Allow-Origin"] = FRONTEND_ORIGIN
@@ -413,6 +469,161 @@ def youtube_search():
             "error": f"Server error: {str(e)}",
             "display_message": "    حدث خطأ في السيرفر. حاول مرة أخرى لاحقاً."
         }), 500
+
+# ===== Notes API Routes =====
+
+@app.route('/api/notes', methods=['GET'])
+@require_auth
+def get_notes():
+    """Get all notes for the current user"""
+    try:
+        user_id = request.user_data['user_id']
+        notes_ref = db.collection('users').document(user_id).collection('notes')
+        notes_docs = notes_ref.order_by('createdAt', direction=firestore.Query.DESCENDING).stream()
+        
+        notes_list = []
+        for note_doc in notes_docs:
+            note_data = note_doc.to_dict()
+            note_data['id'] = note_doc.id
+            notes_list.append(note_data)
+        
+        return jsonify({'notes': notes_list, 'success': True})
+    except Exception as e:
+        print(f"Error fetching notes: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e), 'success': False}), 500
+
+
+@app.route('/api/notes', methods=['POST'])
+@require_auth
+def create_note():
+    """Create a new note"""
+    try:
+        user_id = request.user_data['user_id']
+        data = request.get_json()
+        
+        if not data or 'content' not in data:
+            return jsonify({'error': 'Invalid data', 'success': False}), 400
+        
+        note_data = {
+            'type': data.get('type', 'note'),
+            'content': data.get('content', ''),
+            'color': data.get('color', '#ffffff'),
+            'checked': data.get('checked', False),
+            'createdAt': data.get('createdAt', datetime.utcnow().isoformat()),
+            'updatedAt': datetime.utcnow().isoformat()
+        }
+        
+        notes_ref = db.collection('users').document(user_id).collection('notes')
+        
+        if 'id' in data:
+            note_ref = notes_ref.document(data['id'])
+            note_ref.set(note_data)
+            note_id = data['id']
+        else:
+            doc_ref = notes_ref.add(note_data)
+            note_id = doc_ref[1].id
+        
+        note_data['id'] = note_id
+        
+        return jsonify({'note': note_data, 'success': True}), 201
+    except Exception as e:
+        print(f"Error creating note: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e), 'success': False}), 500
+
+
+@app.route('/api/notes/<note_id>', methods=['PUT'])
+@require_auth
+def update_note(note_id):
+    """Update an existing note"""
+    try:
+        user_id = request.user_data['user_id']
+        data = request.get_json()
+        
+        if not data:
+            return jsonify({'error': 'Invalid data', 'success': False}), 400
+        
+        update_data = {
+            'updatedAt': datetime.utcnow().isoformat()
+        }
+        
+        allowed_fields = ['content', 'color', 'checked', 'type']
+        for field in allowed_fields:
+            if field in data:
+                update_data[field] = data[field]
+        
+        note_ref = db.collection('users').document(user_id).collection('notes').document(note_id)
+        
+        if not note_ref.get().exists:
+            return jsonify({'error': 'Note not found', 'success': False}), 404
+        
+        note_ref.update(update_data)
+        
+        updated_note = note_ref.get().to_dict()
+        updated_note['id'] = note_id
+        
+        return jsonify({'note': updated_note, 'success': True})
+    except Exception as e:
+        print(f"Error updating note: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e), 'success': False}), 500
+
+
+@app.route('/api/notes/<note_id>', methods=['DELETE'])
+@require_auth
+def delete_note(note_id):
+    """Delete a note"""
+    try:
+        user_id = request.user_data['user_id']
+        
+        note_ref = db.collection('users').document(user_id).collection('notes').document(note_id)
+        
+        if not note_ref.get().exists:
+            return jsonify({'error': 'Note not found', 'success': False}), 404
+        
+        note_ref.delete()
+        
+        return jsonify({'message': 'Note deleted successfully', 'success': True})
+    except Exception as e:
+        print(f"Error deleting note: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e), 'success': False}), 500
+
+
+@app.route('/api/notes/reorder', methods=['POST'])
+@require_auth
+def reorder_notes():
+    """Update the order of notes"""
+    try:
+        user_id = request.user_data['user_id']
+        data = request.get_json()
+        
+        if not data or 'order' not in data:
+            return jsonify({'error': 'Invalid data', 'success': False}), 400
+        
+        order = data['order']
+        
+        batch = db.batch()
+        for index, note_id in enumerate(order):
+            note_ref = db.collection('users').document(user_id).collection('notes').document(note_id)
+            batch.update(note_ref, {
+                'order': index, 
+                'updatedAt': datetime.utcnow().isoformat()
+            })
+        
+        batch.commit()
+        
+        return jsonify({'message': 'Order updated successfully', 'success': True})
+    except Exception as e:
+        print(f"Error reordering notes: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': str(e), 'success': False}), 500
 
 
 if __name__ == "__main__":
