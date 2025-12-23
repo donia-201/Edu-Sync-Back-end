@@ -434,10 +434,14 @@ def create_event():
             "end": data["end"],
             "type": data["type"],
             "description": data.get("description", ""),
-            "created_at": datetime.now().isoformat(),
+            "reminder": data.get("reminder"),   # NEW
+            "reminder_sent": False,              # NEW
+            "created_at": datetime.utcnow().isoformat(),
             "synced_to_google": False,
             "google_event_id": None
-        }
+}
+
+
         
         # Save to Firestore
         events_ref = db.collection("events")
@@ -580,7 +584,7 @@ def update_event(event_id):
         
         # Update fields
         update_data = {}
-        for field in ["title", "start", "end", "type", "description"]:
+        for field in ["title", "start", "end", "type", "description", "reminder"]:
             if field in data:
                 update_data[field] = data[field]
         
@@ -641,6 +645,33 @@ def update_event(event_id):
     except Exception as e:
         print("Update event error:", e)
         return jsonify({"success": False, "msg": str(e)}), 500
+    
+def process_event_reminders():
+    now = datetime.utcnow().isoformat()
+    
+    events_ref = db.collection("events")
+    query = events_ref.where("reminder_sent", "==", False)
+
+    for doc in query.stream():
+        event = doc.to_dict()
+        reminder_time = event.get("reminder")
+
+        if reminder_time and reminder_time <= now:
+            # create notification
+            db.collection("notifications").add({
+                "user_id": event["user_id"],
+                "title": "Event Reminder",
+                "message": f"You have {event['title']} session soon",
+                "event_id": doc.id,
+                "is_read": False,
+                "created_at": now
+            })
+
+            # mark reminder as sent
+            events_ref.document(doc.id).update({
+                "reminder_sent": True
+            })
+
 
 @app.delete("/api/events/<event_id>")
 @require_auth
@@ -690,6 +721,42 @@ def delete_event(event_id):
     except Exception as e:
         print("Delete event error:", e)
         return jsonify({"success": False, "msg": str(e)}), 500
+
+# ---------notifications-----------
+@app.get("/api/notifications")
+@require_auth
+def get_notifications():
+    user_id = request.user_data["user_id"]
+
+    notifications_ref = db.collection("notifications")
+    docs = notifications_ref.where("user_id", "==", user_id)\
+                            .order_by("created_at", direction=firestore.Query.DESCENDING)\
+                            .stream()
+
+    notifications = []
+    for doc in docs:
+        data = doc.to_dict()
+        data["id"] = doc.id
+        notifications.append(data)
+
+    return jsonify({
+        "success": True,
+        "notifications": notifications
+    })
+
+@app.put("/api/notifications/<notification_id>/read")
+@require_auth
+def mark_notification_read(notification_id):
+    notif_ref = db.collection("notifications").document(notification_id)
+    
+    if not notif_ref.get().exists:
+        return jsonify({"success": False, "msg": "Not found"}), 404
+
+    notif_ref.update({"is_read": True})
+
+    return jsonify({"success": True})
+
+
 
 # ---------------Log Out-----------
 @app.post("/logout")
