@@ -10,13 +10,14 @@ def initialize_firebase():
             cred = credentials.Certificate(json.loads(SERVICE_ACCOUNT_JSON))
             if not firebase_admin._apps:
                 firebase_admin.initialize_app(cred)
-            print(" Firebase initialized successfully")
+            print("Firebase initialized successfully")
         except Exception as e:
-            print(f" Firebase initialization error: {e}")
+            print(f"Firebase initialization error: {e}")
     else:
-        print(" Warning: FIREBASE_SERVICE_ACCOUNT_JSON not provided.")
+        print("Warning: FIREBASE_SERVICE_ACCOUNT_JSON not provided.")
 
-# Initialize Firestore client
+initialize_firebase()
+
 db = firestore.client()
 users_ref = db.collection("users")
 sessions_ref = db.collection("sessions")
