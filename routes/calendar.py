@@ -129,11 +129,11 @@ def create_event():
         user_id = request.user_data["user_id"]
         data = request.get_json()
         
-        print(f"📝 Creating event for user: {user_id}")
-        print(f"📦 Data received: {data}")
+        print(f" Creating event for user: {user_id}")
+        print(f" Data received: {data}")
         
         # Validate required fields
-        required_fields = ["title", "start", "end", "type"]
+        required_fields = ["title", "start", "end"]
         for field in required_fields:
             if not data.get(field):
                 return jsonify({"success": False, "msg": f"Missing field: {field}"}), 400
@@ -144,7 +144,6 @@ def create_event():
             "title": data["title"],
             "start": data["start"],
             "end": data["end"],
-            "type": data["type"],
             "description": data.get("description", ""),
             "reminder": data.get("reminder"),
             "reminder_sent": False,

@@ -1,6 +1,7 @@
 from flask import Flask, jsonify
 from flask_cors import CORS
 
+
 # Import configuration
 from config import FRONTEND_ORIGIN, PORT
 
@@ -36,12 +37,15 @@ from routes.notes import notes_bp
 from routes.events import events_bp
 from routes.notification import notifications_bp
 from routes.youtube import youtube_bp
+from routes.mail import mail_bp
+
 
 app.register_blueprint(auth_bp)
 app.register_blueprint(notes_bp)
 app.register_blueprint(events_bp)
 app.register_blueprint(notifications_bp)
 app.register_blueprint(youtube_bp)
+app.register_blueprint(mail_bp)
 
 # Root route
 @app.get("/")
