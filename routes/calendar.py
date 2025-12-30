@@ -121,81 +121,8 @@ def calendar_status():
 # ===================================
 # Events CRUD Routes
 # ===================================
-@events_bp.route("/api/events", methods=["POST"])
-@require_auth
-def create_event():
-    """Create a new event"""
-    try:
-        user_id = request.user_data["user_id"]
-        data = request.get_json()
-        
-        print(f" Creating event for user: {user_id}")
-        print(f" Data received: {data}")
-        
-        # Validate required fields
-        required_fields = ["title", "start", "end"]
-        for field in required_fields:
-            if not data.get(field):
-                return jsonify({"success": False, "msg": f"Missing field: {field}"}), 400
-        
-        # Create event document
-        event_data = {
-            "user_id": user_id,
-            "title": data["title"],
-            "start": data["start"],
-            "end": data["end"],
-            "description": data.get("description", ""),
-            "reminder": data.get("reminder"),
-            "reminder_sent": False,
-            "created_at": datetime.utcnow().isoformat(),
-            "synced_to_google": False,
-            "google_event_id": None
-        }
-        
-        # Save to Firestore
-        events_ref = db.collection("events")
-        event_ref = events_ref.add(event_data)
-        event_id = event_ref[1].id
-        
-        print(f"✅ Event created with ID: {event_id}")
-        
-        # Try to sync to Google Calendar if connected
-        user_doc = users_ref.document(user_id).get()
-        if user_doc.exists:
-            user_data = user_doc.to_dict()
-            refresh_token = user_data.get("google_calendar_refresh_token")
-            
-            if refresh_token:
-                try:
-                    service = get_calendar_service(refresh_token)
-                    google_event = convert_to_google_calendar_format(event_data)
+
                     
-                    result = service.events().insert(
-                        calendarId='primary',
-                        body=google_event
-                    ).execute()
-                    
-                    # Update event with Google Calendar ID
-                    events_ref.document(event_id).update({
-                        "synced_to_google": True,
-                        "google_event_id": result.get("id")
-                    })
-                    
-                    print(f"✅ Event synced to Google Calendar: {result.get('id')}")
-                except Exception as e:
-                    print(f"❌ Failed to sync to Google Calendar: {e}")
-        
-        return jsonify({
-            "success": True,
-            "msg": "Event created successfully",
-            "event_id": event_id
-        }), 201
-        
-    except Exception as e:
-        print(f"❌ Create event error: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({"success": False, "msg": str(e)}), 500
 
 @events_bp.route("/api/events", methods=["GET"])
 @require_auth
@@ -261,16 +188,16 @@ def get_events():
                                 "title": g_event.get('summary', 'No Title'),
                                 "start": start,
                                 "end": end,
-                                "type": "focus",
                                 "description": g_event.get('description', ''),
+                                "reminder":g_event.get('reminders', {}),
                                 "synced_to_google": True,
                                 "google_event_id": google_id,
                                 "source": "google_calendar"
                             })
                     
-                    print(f"✅ Added {len(google_items)} events from Google Calendar")
+                    print(f" Added {len(google_items)} events from Google Calendar")
                 except Exception as e:
-                    print(f"⚠️ Failed to fetch from Google Calendar: {e}")
+                    print(f" Failed to fetch from Google Calendar: {e}")
         
         return jsonify({
             "success": True,
@@ -279,7 +206,7 @@ def get_events():
         })
         
     except Exception as e:
-        print(f"❌ Get events error: {e}")
+        print(f" Get events error: {e}")
         import traceback
         traceback.print_exc()
         return jsonify({"success": False, "msg": str(e)}), 500
@@ -292,7 +219,7 @@ def update_event(event_id):
         user_id = request.user_data["user_id"]
         data = request.get_json()
         
-        print(f"🔄 Updating event: {event_id}")
+        print(f" Updating event: {event_id}")
         
         events_ref = db.collection("events")
         event_doc = events_ref.document(event_id).get()
@@ -308,7 +235,7 @@ def update_event(event_id):
         
         # Update fields
         update_data = {}
-        for field in ["title", "start", "end", "type", "description", "reminder"]:
+        for field in ["title", "start", "end",  "description", "reminder"]:
             if field in data:
                 update_data[field] = data[field]
         
@@ -317,7 +244,7 @@ def update_event(event_id):
         # Update in Firestore
         events_ref.document(event_id).update(update_data)
         
-        print(f"✅ Event updated in Firestore")
+        print(f" Event updated in Firestore")
         
         # Update in Google Calendar if synced
         google_event_id = event_data.get("google_event_id")
