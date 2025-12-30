@@ -1,5 +1,10 @@
 from flask import Flask, jsonify
 from flask_cors import CORS
+import os
+os.environ["TZ"] = "Africa/Cairo"
+import time
+time.tzset()
+
 
 
 # Import configuration
