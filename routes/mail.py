@@ -2,19 +2,21 @@ from flask import Blueprint, request, jsonify
 import smtplib
 from email.mime.text import MIMEText
 import os
+from email.mime.multipart import MIMEMultipart
+from config import EMAIL_USER, EMAIL_PASSWORD, FRONTEND_ORIGIN
+from flask_cors import CORS
 
 mail_bp = Blueprint("mail", __name__)
 
-EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS")
-EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
-RECEIVER_EMAIL = os.getenv("RECEIVER_EMAIL", EMAIL_ADDRESS)
+CORS(mail_bp, origins=[FRONTEND_ORIGIN])
 
-
+# ===========================
+# Route لإرسال البريد
+# ===========================
 @mail_bp.route("/api/send-email", methods=["POST"])
 def send_email():
     try:
         data = request.get_json()
-
         name = data.get("name")
         email = data.get("email")
         subject = data.get("subject")
@@ -23,26 +25,23 @@ def send_email():
         if not all([name, email, subject, message]):
             return jsonify({"success": False, "msg": "Missing fields"}), 400
 
-        msg = MIMEText(f"""
-        New message from website:
+        msg = MIMEMultipart()
+        msg["From"] = EMAIL_USER
+        msg["To"] = EMAIL_USER       
+        msg["Subject"] = f"Contact Form: {subject}"
 
-        Name: {name}
-        Email: {email}
+        body = f"Name: {name}\nEmail: {email}\nMessage:\n{message}"
+        msg.attach(MIMEText(body, "plain"))
 
-        Message:
-        {message}
-        """)
-
-        msg["Subject"] = f" {subject}"
-        msg["From"] = EMAIL_ADDRESS
-        msg["To"] = RECEIVER_EMAIL
-
-        with smtplib.SMTP_SSL("smtp.gmail.com", 465) as server:
-            server.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
+        with smtplib.SMTP("smtp.gmail.com", 587) as server:
+            server.starttls()
+            server.login(EMAIL_USER, EMAIL_PASSWORD)
             server.send_message(msg)
 
-        return jsonify({"success": True, "message": "Email sent successfully"})
+        return jsonify({"success": True, "msg": "Email sent successfully"})
 
     except Exception as e:
-        print("EMAIL ERROR:", e)
-        return jsonify({"success": False, "error": str(e)}), 500
+        print("Email send error:", e)
+        return jsonify({"success": False, "msg": str(e)}), 500
+
+

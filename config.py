@@ -21,5 +21,8 @@ CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events"
 # YouTube API Configuration
 YOUTUBE_API_KEY = os.getenv("API_KEY")
 
+# contact us configuration
+EMAIL_USER = os.environ.get("EMAIL_USER")          
+EMAIL_PASSWORD = os.environ.get("EMAIL_PASSWORD")
 # Server Configuration
 PORT = int(os.getenv("PORT", 8080))
