@@ -382,12 +382,12 @@ def get_calendar_events():
                                 "source": "google_calendar"
                             })
                     
-                    print(f"✅ [CALENDAR] Merged {len(google_items)} Google events")
+                    print(f" [CALENDAR] Merged {len(google_items)} Google events")
                 
                 except Exception as e:
                     print(f"⚠️ [CALENDAR] Google fetch failed: {e}")
         
-        print(f"✅ [CALENDAR] Returning {len(events)} total events")
+        print(f" [CALENDAR] Returning {len(events)} total events")
         
         return jsonify({
             "success": True,

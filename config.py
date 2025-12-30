@@ -46,12 +46,12 @@ YOUTUBE_API_KEY = os.getenv("API_KEY")
 # ====================================
 # Email Configuration (Contact Form)
 # ====================================
-EMAIL_USER = os.getenv("EMAIL_USER")          
+EMAIL_ADDRESS = os.getenv("EMAIL_ADDRESS")          
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
 
 # Email validation
-if not EMAIL_USER or not EMAIL_PASSWORD:
-    print("  WARNING: EMAIL_USER or EMAIL_PASSWORD not set!")
+if not EMAIL_ADDRESS or not EMAIL_PASSWORD:
+    print("  WARNING: EMAIL_ADDRESS or EMAIL_PASSWORD not set!")
     print("   Contact form will not work without these credentials.")
 
 # ====================================
