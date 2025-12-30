@@ -2,7 +2,7 @@ from flask import Blueprint, request, jsonify
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from config import EMAIL_USER, EMAIL_PASSWORD, ALLOWED_ORIGINS
+from config import EMAIL_ADDRESS, EMAIL_PASSWORD, ALLOWED_ORIGINS
 from flask_cors import CORS
 
 mail_bp = Blueprint("mail", __name__)
@@ -50,7 +50,7 @@ def send_email():
             }), 400
         
         # Check if email credentials are configured
-        if not EMAIL_USER or not EMAIL_PASSWORD:
+        if not EMAIL_ADDRESS or not EMAIL_PASSWORD:
             print(" Email credentials not configured!")
             return jsonify({
                 "success": False,
@@ -59,8 +59,8 @@ def send_email():
         
         # Create email message
         msg = MIMEMultipart()
-        msg["From"] = EMAIL_USER
-        msg["To"] = EMAIL_USER
+        msg["From"] = EMAIL_ADDRESS
+        msg["To"] = EMAIL_ADDRESS
         msg["Subject"] = f"EduSync Contact: {subject}"
         msg["Reply-To"] = email
         
@@ -86,7 +86,7 @@ Time: {__import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
         try:
             with smtplib.SMTP("smtp.gmail.com", 587, timeout=15) as server:
                 server.starttls()
-                server.login(EMAIL_USER, EMAIL_PASSWORD)
+                server.login(EMAIL_ADDRESS, EMAIL_PASSWORD)
                 server.send_message(msg)
             
             print(f" Email sent successfully from: {email}")
@@ -129,10 +129,10 @@ Time: {__import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 @mail_bp.route("/api/mail-status", methods=["GET"])
 def mail_status():
     """Check if email service is configured properly"""
-    is_configured = bool(EMAIL_USER and EMAIL_PASSWORD)
+    is_configured = bool(EMAIL_ADDRESS and EMAIL_PASSWORD)
     
     return jsonify({
         "status": "configured" if is_configured else "not_configured",
-        "email_user": EMAIL_USER if is_configured else None,
+        "email_user": EMAIL_ADDRESS if is_configured else None,
         "ready": is_configured
     }), 200
