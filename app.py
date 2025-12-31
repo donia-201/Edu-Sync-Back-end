@@ -34,6 +34,7 @@ from routes.events import events_bp
 from routes.calendar import calendar_bp
 from routes.notification import notifications_bp
 from routes.youtube import youtube_bp
+from routes.setting import setting_bp
 
 app.register_blueprint(auth_bp)
 app.register_blueprint(notes_bp)
@@ -41,6 +42,7 @@ app.register_blueprint(events_bp)
 app.register_blueprint(calendar_bp)
 app.register_blueprint(notifications_bp)
 app.register_blueprint(youtube_bp)
+app.register_blueprint(setting_bp)
 
 # Root route
 @app.get("/")
