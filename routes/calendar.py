@@ -25,11 +25,14 @@ def validate_iso_datetime(date_str):
     """Validate and normalize ISO datetime string"""
     if not date_str:
         return None
-    
+
     try:
         dt = datetime.fromisoformat(date_str.replace('Z', '+00:00'))
         iso_str = dt.isoformat()
-        return iso_str + 'Z' if not iso_str.endswith('Z') else iso_str
+        # Normalize +00:00 to Z for UTC
+        if '+00:00' in iso_str:
+            iso_str = iso_str.replace('+00:00', 'Z')
+        return iso_str
     except (ValueError, AttributeError):
         try:
             dt = datetime.strptime(date_str, '%Y-%m-%d')
