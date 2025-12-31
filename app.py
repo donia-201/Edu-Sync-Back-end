@@ -15,10 +15,6 @@ initialize_firebase()
 # Initialize Flask app
 app = Flask(__name__)
 
-app.wsgi_app = ProxyFix(
-    app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1
-)
-
 CORS(app, resources={
     r"/*": {
         "origins": [FRONTEND_ORIGIN, "https://edu-sync-gold.vercel.app", "http://localhost:5000", "http://127.0.0.1:5000"],
