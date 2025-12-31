@@ -1,7 +1,5 @@
 from flask import Flask, jsonify, request, make_response
 from flask_cors import CORS
-from werkzeug.middleware.proxy_fix import ProxyFix
-from werkzeug.middleware.proxy_fix import ProxyFix
 import os
 os.environ["TZ"] = "Africa/Cairo"
 import time
@@ -31,8 +29,7 @@ CORS(app, resources={
     }
 })
 
-# Remove the @app.after_request - it was overriding Flask-CORS headers
-# If you need custom headers, add them via Flask-CORS or in views
+
 
 # Register Blueprints (Routes)
 from routes.auth_routes import auth_bp
@@ -41,7 +38,6 @@ from routes.events import events_bp
 from routes.calendar import calendar_bp
 from routes.notification import notifications_bp
 from routes.youtube import youtube_bp
-from routes.mail import mail_bp
 
 app.register_blueprint(auth_bp)
 app.register_blueprint(notes_bp)
@@ -49,7 +45,6 @@ app.register_blueprint(events_bp)
 app.register_blueprint(calendar_bp)
 app.register_blueprint(notifications_bp)
 app.register_blueprint(youtube_bp)
-app.register_blueprint(mail_bp)
 
 # Root route
 @app.get("/")
