@@ -9,7 +9,7 @@ setting_bp = Blueprint('setting', __name__)
 # ===================================
 # Get User Profile & Settings
 # ===================================
-@settings_bp.route("/api/user/profile", methods=["GET"])
+@setting_bp.route("/api/user/profile", methods=["GET"])
 @require_auth
 def get_user_profile():
     """Get user profile and setting"""
@@ -73,7 +73,7 @@ def get_user_profile():
 # ===================================
 # Update User Settings
 # ===================================
-@settings_bp.route("/api/user/settings", methods=["PUT"])
+@setting_bp.route("/api/user/settings", methods=["PUT"])
 @require_auth
 def update_user_settings():
     """Update user settings"""
@@ -193,7 +193,7 @@ def update_user_settings():
 # ===================================
 # Update User Profile
 # ===================================
-@settings_bp.route("/api/user/profile", methods=["PUT"])
+@setting_bp.route("/api/user/profile", methods=["PUT"])
 @require_auth
 def update_user_profile():
     """Update user profile (name, etc.)"""
@@ -247,7 +247,7 @@ def update_user_profile():
 # ===================================
 # Get All Settings (Quick endpoint)
 # ===================================
-@settings_bp.route("/api/user/settings", methods=["GET"])
+@setting_bp.route("/api/user/settings", methods=["GET"])
 @require_auth
 def get_user_settings():
     """Get only settings (faster than full profile)"""
