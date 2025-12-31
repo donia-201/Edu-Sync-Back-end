@@ -3,7 +3,7 @@ from datetime import datetime
 from utils.firebase_config import db, users_ref
 from utils.auth import require_auth
 
-settings_bp = Blueprint('settings', __name__)
+setting_bp = Blueprint('setting', __name__)
 
 
 # ===================================
@@ -12,7 +12,7 @@ settings_bp = Blueprint('settings', __name__)
 @settings_bp.route("/api/user/profile", methods=["GET"])
 @require_auth
 def get_user_profile():
-    """Get user profile and settings"""
+    """Get user profile and setting"""
     try:
         user_id = request.user_data["user_id"]
         
