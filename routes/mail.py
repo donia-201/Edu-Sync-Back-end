@@ -22,7 +22,7 @@ def send_email():
         return jsonify({"success": False, "msg": "Invalid email format"}), 400
 
     if not EMAIL_ADDRESS or not EMAIL_PASSWORD:
-        return jsonify({"success": False, "msg": "Email service not configured"}), 500
+        return jsonify({"success": False, "msg": "Email not configured"}), 500
 
     msg = MIMEMultipart()
     msg["From"] = EMAIL_ADDRESS
@@ -41,5 +41,5 @@ def send_email():
         return jsonify({"success": True, "msg": "Email sent successfully"}), 200
 
     except Exception as e:
-        print("SMTP ERROR:", e)
+        print("EMAIL ERROR:", e)
         return jsonify({"success": False, "msg": "Failed to send email"}), 500
