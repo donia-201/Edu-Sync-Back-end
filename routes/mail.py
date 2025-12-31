@@ -8,15 +8,17 @@ from config import EMAIL_ADDRESS, EMAIL_PASSWORD
 mail_bp = Blueprint("mail", __name__)
 
 @mail_bp.route("/api/send-email", methods=["POST", "OPTIONS"])
-@cross_origin(origins=["https://edu-sync-gold.vercel.app"], methods=["POST", "OPTIONS"], headers=["Content-Type"])
 def send_email():
     if request.method == "OPTIONS":
-        # Manual preflight response (fallback if Flask-CORS misses due to proxy)
         resp = make_response()
         resp.headers["Access-Control-Allow-Origin"] = "https://edu-sync-gold.vercel.app"
         resp.headers["Access-Control-Allow-Methods"] = "POST, OPTIONS"
         resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
-        resp.headers["Access-Control-Max-Age"] = "3600"  # Cache preflight for 1 hour
+        resp.headers["Access-Control-Max-Age"] = "3600"
+        return resp, 200
+    
+        resp = jsonify({"success": True, "msg": "Email sent successfully"})
+        resp.headers["Access-Control-Allow-Origin"] = "https://edu-sync-gold.vercel.app"
         return resp, 200
 
     # Existing POST logic
