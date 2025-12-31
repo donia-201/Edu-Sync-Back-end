@@ -1,11 +1,10 @@
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request, make_response
 from flask_cors import CORS
+from werkzeug.middleware.proxy_fix import ProxyFix
 import os
 os.environ["TZ"] = "Africa/Cairo"
 import time
 time.tzset()
-
-
 
 # Import configuration
 from config import FRONTEND_ORIGIN, PORT
@@ -17,24 +16,22 @@ initialize_firebase()
 # Initialize Flask app
 app = Flask(__name__)
 
-# CORS Configuration
+app.wsgi_app = ProxyFix(
+    app.wsgi_app, x_for=1, x_proto=1, x_host=1, x_prefix=1
+)
+
 CORS(app, resources={
     r"/*": {
-        "origins": [FRONTEND_ORIGIN, "http://localhost:5000", "http://127.0.0.1:5000"],
+        "origins": [FRONTEND_ORIGIN, "https://edu-sync-gold.vercel.app", "http://localhost:5000", "http://127.0.0.1:5000"],
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
         "allow_headers": ["Content-Type", "Authorization"],
-        "supports_credentials": True
+        "supports_credentials": True,
+        "max_age": 3600
     }
 })
 
-@app.after_request
-def apply_cors(response):
-    """Apply CORS headers to all responses"""
-    response.headers["Access-Control-Allow-Origin"] = FRONTEND_ORIGIN
-    response.headers["Access-Control-Allow-Credentials"] = "true"
-    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
-    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
-    return response
+# Remove the @app.after_request - it was overriding Flask-CORS headers
+# If you need custom headers, add them via Flask-CORS or in views
 
 # Register Blueprints (Routes)
 from routes.auth_routes import auth_bp
@@ -44,7 +41,6 @@ from routes.calendar import calendar_bp
 from routes.notification import notifications_bp
 from routes.youtube import youtube_bp
 from routes.mail import mail_bp
-
 
 app.register_blueprint(auth_bp)
 app.register_blueprint(notes_bp)
