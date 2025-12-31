@@ -27,7 +27,14 @@ CORS(app, resources={
     }
 })
 
-
+@app.after_request
+def apply_cors(response):
+    """Apply CORS headers to all responses"""
+    response.headers["Access-Control-Allow-Origin"] = FRONTEND_ORIGIN
+    response.headers["Access-Control-Allow-Credentials"] = "true"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
+    return response
 
 # Register Blueprints (Routes)
 from routes.auth_routes import auth_bp
