@@ -41,7 +41,7 @@ CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events"
 # ====================================
 # YouTube API Configuration
 # ====================================
-YOUTUBE_API_KEY = os.getenv("API_KEY")
+YOUTUBE_API_KEY = os.getenv("YOUTUBE_KEY")
 
 # ====================================
 # Email Configuration (Contact Form)
